@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>npm-watch</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0a0b0f;
+    --surface:  #111318;
+    --surface2: #1a1d24;
+    --border:   rgba(255,255,255,0.07);
+    --green:    #4ade80;
+    --cyan:     #38bdf8;
+    --amber:    #fbbf24;
+    --red:      #f87171;
+    --muted:    #4a5060;
+    --text:     #c8d0e0;
+    --text-dim: #6b7385;
+    --mono:     'JetBrains Mono', 'Fira Mono', monospace;
+    --api:      http://localhost:3999;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    min-height: 100vh;
+  }
+
+  /* ── Titlebar ── */
+  .titlebar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #ffbd2e; } .dot.g { background: #28c840; }
+  .titlebar-title { flex: 1; text-align: center; font-size: 12px; color: var(--text-dim); letter-spacing: .05em; }
+  .live-badge { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--green); }
+  .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .toolbar input {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 10px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .toolbar input:focus { border-color: var(--green); }
+  .toolbar input.filter { width: 180px; }
+  .toolbar input.endpoint { flex: 1; min-width: 220px; }
+  .label { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--green); color: var(--green); }
+  .btn.active { border-color: var(--green); color: var(--green); background: rgba(74,222,128,.06); }
+  .btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+  .ep-status { font-size: 11px; white-space: nowrap; }
+  .ep-status.ok  { color: var(--green); }
+  .ep-status.err { color: var(--red); }
+  .ep-status.idle{ color: var(--text-dim); }
+
+  /* ── Scan bar ── */
+  .scan-wrap { overflow: hidden; height: 1px; background: transparent; }
+  .scan-bar { height: 1px; background: linear-gradient(90deg, transparent, var(--green), transparent); animation: scan 2.5s ease-in-out infinite; }
+  @keyframes scan { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+
+  /* ── Sections ── */
+  .section-header {
+    padding: 7px 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .section-header span { color: var(--cyan); font-size: 12px; text-transform: none; letter-spacing: 0; }
+
+  /* ── Tables ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: left;
+    font-weight: 500;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody tr {
+    border-bottom: 1px solid rgba(255,255,255,.03);
+    transition: background .1s;
+    opacity: 0;
+    transform: translateX(-6px);
+    animation: rowIn .3s forwards;
+  }
+  @keyframes rowIn { to { opacity:1; transform:translateX(0); } }
+  tbody tr:hover { background: var(--surface2); }
+  td { padding: 7px 12px; font-size: 12px; white-space: nowrap; }
+
+  .pid     { color: var(--amber); font-weight: 500; font-size: 13px; }
+  .project { color: var(--cyan); font-weight: 500; }
+  .cmd     { color: var(--text-dim); font-size: 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .dir     { color: var(--text-dim); font-size: 11px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+
+  .cpu           { color: var(--text); }
+  .cpu.hot       { color: var(--amber); }
+  .cpu.burn      { color: var(--red); }
+
+  .port-tag {
+    display: inline-block;
+    background: rgba(74,222,128,.1);
+    border: 1px solid rgba(74,222,128,.3);
+    color: var(--green);
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-size: 11px;
+    margin: 1px;
+  }
+  .no-port { color: var(--muted); font-size: 11px; }
+
+  .kill-btn {
+    background: transparent;
+    border: 1px solid rgba(248,113,113,.2);
+    border-radius: 4px;
+    color: rgba(248,113,113,.5);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .kill-btn:hover { border-color: var(--red); color: var(--red); background: rgba(248,113,113,.08); }
+
+  /* ── Status bar ── */
+  .status-bar {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 6px 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+    flex-wrap: wrap;
+    position: sticky;
+    bottom: 0;
+  }
+  .status-item { display: flex; align-items: center; gap: 5px; }
+  .val  { color: var(--green); }
+  .warn { color: var(--amber); }
+  .info { color: var(--cyan); }
+  .spacer { flex: 1; }
+
+  /* ── Kill modal (faux viewport pour éviter position:fixed) ── */
+  .modal-backdrop {
+    display: none;
+    min-height: 200px;
+    background: rgba(0,0,0,.7);
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+  }
+  .modal-backdrop.show { display: flex; }
+  .kill-dialog {
+    background: var(--surface);
+    border: 1px solid rgba(248,113,113,.4);
+    border-radius: 8px;
+    padding: 24px 28px;
+    min-width: 300px;
+    font-family: var(--mono);
+    text-align: center;
+  }
+  .kill-dialog p { margin-bottom: 14px; font-size: 13px; color: var(--text-dim); }
+  .kill-pid-big  { color: var(--amber); font-size: 20px; font-weight: 700; display: block; margin-bottom: 4px; }
+  .kill-proj-big { color: var(--cyan); font-size: 14px; display: block; margin-bottom: 16px; }
+  .kill-btns { display: flex; gap: 10px; justify-content: center; }
+  .kill-btns button { font-family: var(--mono); font-size: 12px; padding: 6px 20px; border-radius: 5px; cursor: pointer; border: 1px solid; }
+  .btn-confirm { background: rgba(248,113,113,.15); border-color: var(--red) !important; color: var(--red); }
+  .btn-cancel  { background: transparent; border-color: var(--border) !important; color: var(--text-dim); }
+
+  .empty { padding: 24px; text-align: center; color: var(--text-dim); font-size: 12px; }
+  .divider { border: none; border-top: 1px solid var(--border); }
+
+  .error-banner {
+    background: rgba(248,113,113,.08);
+    border-bottom: 1px solid rgba(248,113,113,.2);
+    color: var(--red);
+    font-size: 12px;
+    padding: 8px 16px;
+    display: none;
+  }
+  .error-banner.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <div class="dots">
+    <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+  </div>
+  <div class="titlebar-title">npm-watch — process monitor</div>
+  <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
+</div>
+
+<div class="toolbar">
+  <span class="label">Filtre :</span>
+  <input class="filter" type="text" id="filter" placeholder="pid, projet, port..." oninput="renderAll()">
+  <span class="label">API :</span>
+  <input class="endpoint" type="text" id="endpoint" value="http://localhost:3999">
+  <button class="btn active" id="watch-btn" onclick="toggleWatch()">⏸ Watch 3s</button>
+  <span class="ep-status idle" id="ep-status">— en attente</span>
+</div>
+
+<div class="error-banner" id="error-banner"></div>
+<div class="scan-wrap"><div class="scan-bar"></div></div>
+
+<div>
+  <div class="section-header">
+    Processus Node / npm
+    <span id="proc-count">—</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>PID</th><th>PROJET</th><th>COMMANDE</th>
+        <th>CPU %</th><th>MEM MB</th><th>PORTS</th><th>RÉPERTOIRE</th><th></th>
+      </tr></thead>
+      <tbody id="proc-body"><tr><td colspan="8" class="empty">Chargement...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div>
+  <div class="section-header">
+    Ports en écoute (Node)
+    <span id="port-count">—</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>PORT</th><th>PID</th><th>PROJET</th><th>ÉTAT</th><th>PROTO</th>
+      </tr></thead>
+      <tbody id="port-body"><tr><td colspan="5" class="empty">Chargement...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="status-item">CPU total : <span class="val" id="total-cpu">—</span></div>
+  <div class="status-item">Mémoire : <span class="warn" id="total-mem">—</span></div>
+  <div class="status-item">Processus : <span class="info" id="total-procs">—</span></div>
+  <div class="spacer"></div>
+  <div class="status-item" id="last-scan">—</div>
+</div>
+
+<!-- Kill modal -->
+<div class="modal-backdrop" id="kill-modal">
+  <div class="kill-dialog">
+    <p>Tuer le processus ?</p>
+    <span class="kill-pid-big" id="kill-pid-display"></span>
+    <span class="kill-proj-big" id="kill-proj-display"></span>
+    <p style="font-size:11px;">SIGTERM → SIGKILL si résistant</p>
+    <div class="kill-btns">
+      <button class="btn-confirm" onclick="confirmKill()">⚡ Kill</button>
+      <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let data = [];
+let killTarget = null;
+let watchInterval = null;
+let watchActive = true;
+
+function apiBase() {
+  return document.getElementById('endpoint').value.trim().replace(/\/$/, '');
+}
+
+function setStatus(msg, cls) {
+  const el = document.getElementById('ep-status');
+  el.textContent = msg;
+  el.className = 'ep-status ' + cls;
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+async function fetchData() {
+  try {
+    setStatus('⟳ fetch...', 'idle');
+    const res = await fetch(apiBase() + '/api/ps', { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    data = await res.json();
+    setStatus('✓ connecté', 'ok');
+    renderAll();
+  } catch(e) {
+    setStatus('✗ ' + e.message, 'err');
+    showError('Impossible de joindre le serveur — lance python3 server.py');
+  }
+}
+
+function getFilter() { return document.getElementById('filter').value.toLowerCase().trim(); }
+
+function matchRow(r, f) {
+  if (!f) return true;
+  return String(r.pid).includes(f) ||
+    r.project.toLowerCase().includes(f) ||
+    r.cmd.toLowerCase().includes(f) ||
+    r.dir.toLowerCase().includes(f) ||
+    r.ports.some(p => String(p).includes(f));
+}
+
+function cpuClass(v) { return v > 15 ? 'cpu burn' : v > 8 ? 'cpu hot' : 'cpu'; }
+
+function ts() { return new Date().toTimeString().slice(0, 8); }
+
+function renderAll() {
+  const f = getFilter();
+  const filtered = data.filter(r => matchRow(r, f));
+  renderProcs(filtered);
+  renderPorts(filtered);
+
+  const totalCpu = data.reduce((a,r) => a + r.cpu, 0).toFixed(1);
+  const totalMem = data.reduce((a,r) => a + r.mem, 0).toFixed(0);
+  document.getElementById('total-cpu').textContent = totalCpu + '%';
+  document.getElementById('total-mem').textContent = totalMem + ' MB';
+  document.getElementById('total-procs').textContent = data.length;
+  document.getElementById('last-scan').textContent = 'Dernière analyse : ' + ts();
+}
+
+function renderProcs(rows) {
+  document.getElementById('proc-count').textContent = rows.length + ' trouvé(s)';
+  const tbody = document.getElementById('proc-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">Aucun processus Node/npm détecté</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map((r, i) => `
+    <tr style="animation-delay:${i * 35}ms">
+      <td class="pid">${r.pid}</td>
+      <td class="project">${r.project}</td>
+      <td class="cmd" title="${r.cmd}">${r.cmd}</td>
+      <td class="${cpuClass(r.cpu)}">${r.cpu.toFixed(1)}%</td>
+      <td>${r.mem} MB</td>
+      <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">—</span>'}</td>
+      <td class="dir" title="${r.dir}">${r.dir}</td>
+      <td><button class="kill-btn" onclick="askKill(${r.pid},'${r.project.replace(/'/g,"\\'")}')">kill</button></td>
+    </tr>
+  `).join('');
+}
+
+function renderPorts(rows) {
+  const portRows = [];
+  rows.forEach(r => r.ports.forEach(p => portRows.push({ port: p, pid: r.pid, project: r.project })));
+  document.getElementById('port-count').textContent = portRows.length + ' port(s)';
+  const tbody = document.getElementById('port-body');
+  if (!portRows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Aucun port Node en écoute</td></tr>';
+    return;
+  }
+  tbody.innerHTML = portRows.map((r, i) => `
+    <tr style="animation-delay:${i * 35}ms">
+      <td><span class="port-tag">:${r.port}</span></td>
+      <td class="pid">${r.pid}</td>
+      <td class="project">${r.project}</td>
+      <td style="color:var(--green);font-size:11px;">LISTEN</td>
+      <td style="color:var(--text-dim);font-size:11px;">TCP</td>
+    </tr>
+  `).join('');
+}
+
+function askKill(pid, project) {
+  killTarget = { pid, project };
+  document.getElementById('kill-pid-display').textContent = pid;
+  document.getElementById('kill-proj-display').textContent = project;
+  document.getElementById('kill-modal').classList.add('show');
+}
+function closeModal() { document.getElementById('kill-modal').classList.remove('show'); killTarget = null; }
+
+async function confirmKill() {
+  if (!killTarget) return;
+  closeModal();
+  try {
+    const res = await fetch(apiBase() + '/api/kill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pid: killTarget.pid })
+    });
+    const json = await res.json();
+    if (!res.ok) { showError(json.error || 'Kill échoué'); return; }
+    await fetchData();
+  } catch(e) {
+    showError('Kill impossible : ' + e.message);
+  }
+}
+
+function toggleWatch() {
+  watchActive = !watchActive;
+  const btn = document.getElementById('watch-btn');
+  if (watchActive) {
+    btn.textContent = '⏸ Watch 3s';
+    btn.classList.add('active');
+    startWatch();
+  } else {
+    btn.textContent = '▶ Watch off';
+    btn.classList.remove('active');
+    clearInterval(watchInterval);
+  }
+}
+
+function startWatch() {
+  clearInterval(watchInterval);
+  watchInterval = setInterval(fetchData, 3000);
+}
+
+// Init
+fetchData();
+startWatch();
+</script>
+</body>
+</html>
