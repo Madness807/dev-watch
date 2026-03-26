@@ -370,6 +370,12 @@ function cpuClass(v) { return v > 15 ? 'cpu burn' : v > 8 ? 'cpu hot' : 'cpu'; }
 
 function ts() { return new Date().toTimeString().slice(0, 8); }
 
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
 function renderAll() {
   const f = getFilter();
   const filtered = data.filter(r => matchRow(r, f));
@@ -394,13 +400,13 @@ function renderProcs(rows) {
   tbody.innerHTML = rows.map((r, i) => `
     <tr style="animation-delay:${i * 35}ms">
       <td class="pid">${r.pid}</td>
-      <td class="project">${r.project}</td>
-      <td class="cmd" title="${r.cmd}">${r.cmd}</td>
+      <td class="project">${esc(r.project)}</td>
+      <td class="cmd" title="${esc(r.cmd)}">${esc(r.cmd)}</td>
       <td class="${cpuClass(r.cpu)}">${r.cpu.toFixed(1)}%</td>
       <td>${r.mem} MB</td>
       <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">—</span>'}</td>
-      <td class="dir" title="${r.dir}">${r.dir}</td>
-      <td><button class="kill-btn" onclick="askKill(${r.pid},'${r.project.replace(/'/g,"\\'")}')">kill</button></td>
+      <td class="dir" title="${esc(r.dir)}">${esc(r.dir)}</td>
+      <td><button class="kill-btn" onclick="askKill(${r.pid},'${esc(r.project).replace(/'/g,"\\'")}')">kill</button></td>
     </tr>
   `).join('');
 }
@@ -418,7 +424,7 @@ function renderPorts(rows) {
     <tr style="animation-delay:${i * 35}ms">
       <td><span class="port-tag">:${r.port}</span></td>
       <td class="pid">${r.pid}</td>
-      <td class="project">${r.project}</td>
+      <td class="project">${esc(r.project)}</td>
       <td style="color:var(--green);font-size:11px;">LISTEN</td>
       <td style="color:var(--text-dim);font-size:11px;">TCP</td>
     </tr>

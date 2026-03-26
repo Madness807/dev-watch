@@ -15,7 +15,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)  # autorise les requêtes depuis le HTML local
+CORS(app, origins=["http://localhost:*", "http://127.0.0.1:*", "null"])  # null = fichier local ouvert en file://
 
 PORT = 3999
 
@@ -179,4 +179,4 @@ if __name__ == "__main__":
     print(f"  API : GET  /api/ps")
     print(f"        POST /api/kill  {{\"pid\": 1234}}")
     print(f"  Ctrl+C pour arrêter\n")
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    app.run(host="127.0.0.1", port=PORT, debug=False)
