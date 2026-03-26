@@ -1,13 +1,13 @@
 [Unit]
-Description=npm-watch — Node/npm process monitor API
+Description=dev-watch — process monitor API
 After=network.target
 
 [Service]
 Type=simple
 # Adapte ces deux lignes à ton user et au chemin réel de server.py
 User=jonathan
-WorkingDirectory=/home/jonathan/npm-watch
-ExecStart=/usr/bin/python3 /home/jonathan/npm-watch/server.py
+WorkingDirectory=/home/jonathan/dev-watch
+ExecStart=/usr/bin/python3 /home/jonathan/dev-watch/server.py
 Restart=on-failure
 RestartSec=5
 
