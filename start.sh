@@ -73,8 +73,19 @@ for i in {1..10}; do
   sleep 0.3
 done
 
-# Open dashboard in browser
-xdg-open "http://localhost:3999" 2>/dev/null
+# Open dashboard in browser (cross-platform: Linux, WSL2, macOS)
+if grep -qi microsoft /proc/version 2>/dev/null; then
+  # WSL2: prefer wslview (wslu package), fall back to powershell.exe
+  if command -v wslview >/dev/null 2>&1; then
+    wslview "http://localhost:3999" 2>/dev/null || true
+  else
+    powershell.exe Start-Process "http://localhost:3999" 2>/dev/null || true
+  fi
+elif command -v xdg-open >/dev/null 2>&1; then
+  xdg-open "http://localhost:3999" 2>/dev/null || true
+elif command -v open >/dev/null 2>&1; then
+  open "http://localhost:3999" 2>/dev/null || true
+fi
 
 echo "dev-watch started (PID: $SERVER_PID)"
 echo "Ctrl+C to stop"

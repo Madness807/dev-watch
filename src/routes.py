@@ -4,9 +4,11 @@ import os
 import re
 import signal
 import json
+import tempfile
+import psutil
 from flask import jsonify, request
 from src.helpers import (
-    run_cmd, is_in_container, docker_available, get_cwd, get_cmdline, get_venv,
+    run_cmd, is_in_container, docker_available, get_cwd, get_venv,
     get_project_name, get_ports_for_pid, classify_process, is_native_binary,
     get_cpu_usage, get_ram_usage, get_disk_usage, get_gpu_usage, MAX_CMD_LEN,
 )
@@ -24,69 +26,66 @@ def register_routes(app):
 
     @app.route("/api/ps")
     def api_ps():
-        out = run_cmd(["ps", "aux"])
         processes = []
         seen_pids = set()
+        home = os.path.expanduser("~")
+        tmp_dir = tempfile.gettempdir()
 
-        for line in out.splitlines()[1:]:
-            parts = line.split(None, 10)
-            if len(parts) < 11:
-                continue
-            cmd_full = parts[10]
-
-            proc_type = classify_process(cmd_full)
-            if "ps aux" in cmd_full:
-                continue
-
+        for proc in psutil.process_iter(["pid", "cmdline"]):
             try:
-                pid = int(parts[1])
-            except ValueError:
-                continue
+                pid = proc.pid
+                if pid in seen_pids:
+                    continue
+                seen_pids.add(pid)
 
-            if pid in seen_pids:
-                continue
-            seen_pids.add(pid)
-
-            if pid == os.getpid():
-                continue
-            if is_in_container(pid):
-                continue
-
-            cwd = get_cwd(pid)
-            home = os.path.expanduser("~")
-
-            # Skip system services (cwd outside home or /tmp)
-            if not (cwd.startswith(home) or cwd.startswith("/tmp")):
-                continue
-
-            # Fallback: detect native ELF binaries from user's home
-            if not proc_type:
-                if is_native_binary(pid):
-                    proc_type = "native"
-                else:
+                if pid == os.getpid():
                     continue
 
-            cmdline = get_cmdline(pid) or cmd_full
+                cmdline_parts = proc.info.get("cmdline") or []
+                cmd_full = " ".join(cmdline_parts)
+                if not cmd_full:
+                    continue
 
-            # Skip system services: commands where the script/module is a system path
-            # (but keep user scripts launched with /usr/bin/python3)
-            cmd_parts = cmdline.split()
-            script_args = [a for a in cmd_parts[1:] if not a.startswith("-")]
-            if script_args and any(a.startswith(("/usr/bin/", "/usr/share/", "/usr/sbin/", "/usr/lib/")) for a in script_args):
+                proc_type = classify_process(cmd_full)
+
+                if is_in_container(pid):
+                    continue
+
+                cwd = get_cwd(pid)
+
+                # Skip system services (cwd outside home or tmp)
+                if not (cwd.startswith(home) or cwd.startswith(tmp_dir)):
+                    continue
+
+                # Fallback: detect native binaries from user's home
+                if not proc_type:
+                    if is_native_binary(pid):
+                        proc_type = "native"
+                    else:
+                        continue
+
+                # Skip system services: commands where the script/module is a system path
+                # (but keep user scripts launched with /usr/bin/python3)
+                cmd_parts = cmd_full.split()
+                script_args = [a for a in cmd_parts[1:] if not a.startswith("-")]
+                if script_args and any(a.startswith(("/usr/bin/", "/usr/share/", "/usr/sbin/", "/usr/lib/")) for a in script_args):
+                    continue
+
+                ports = get_ports_for_pid(pid)
+                project = get_project_name(cwd, proc_type)
+                display_cwd = cwd.replace(home, "~") if cwd != "?" else "?"
+
+                processes.append({
+                    "pid": pid,
+                    "type": proc_type,
+                    "project": project,
+                    "cmd": cmd_full[:MAX_CMD_LEN],
+                    "ports": ports,
+                    "dir": display_cwd,
+                    "venv": get_venv(pid),
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-            ports = get_ports_for_pid(pid)
-            project = get_project_name(cwd, proc_type)
-            display_cwd = cwd.replace(home, "~") if cwd != "?" else "?"
-
-            processes.append({
-                "pid": pid,
-                "type": proc_type,
-                "project": project,
-                "cmd": cmdline[:MAX_CMD_LEN],
-                "ports": ports,
-                "dir": display_cwd,
-                "venv": get_venv(pid),
-            })
 
         processes.sort(key=lambda x: x["type"])
         known_pids.clear()
@@ -206,28 +205,36 @@ def register_routes(app):
 
     @app.route("/api/ports")
     def api_ports():
-        out = run_cmd(["ss", "-tlnp"])
         ports = []
         seen = set()
-        for line in out.splitlines()[1:]:
-            m = re.search(r'(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|\[::1\]|\*):(\d+)', line)
-            if not m:
+        try:
+            conns = psutil.net_connections(kind="tcp")
+        except Exception:
+            conns = []
+
+        for conn in conns:
+            if conn.status != "LISTEN":
                 continue
-            port = int(m.group(1))
+            if not conn.laddr:
+                continue
+            port = conn.laddr.port
             if port in seen:
                 continue
             seen.add(port)
 
-            pid_match = re.search(r'pid=(\d+)', line)
-            pid = int(pid_match.group(1)) if pid_match else None
+            pid = conn.pid
             process_name = ""
             cmd = ""
             if pid:
-                name_match = re.search(r'\("([^"]+)"', line)
-                process_name = name_match.group(1) if name_match else ""
-                cmd = get_cmdline(pid)[:MAX_CMD_LEN]
+                try:
+                    p = psutil.Process(pid)
+                    process_name = p.name()
+                    cmd = " ".join(p.cmdline())[:MAX_CMD_LEN]
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
 
-            bind = "all" if ('0.0.0.0' in line or '[::]' in line or '*' in line) else "local"
+            bind_ip = conn.laddr.ip
+            bind = "local" if bind_ip in ("127.0.0.1", "::1") else "all"
 
             ports.append({"port": port, "pid": pid, "process": process_name, "cmd": cmd, "bind": bind})
 
@@ -246,23 +253,30 @@ def register_routes(app):
 
     @app.route("/api/connections")
     def api_connections():
-        out = run_cmd(["ss", "-tnp"])
         connections = []
-        for line in out.splitlines()[1:]:
-            if "ESTAB" not in line:
+        try:
+            conns = psutil.net_connections(kind="tcp")
+        except Exception:
+            conns = []
+
+        for conn in conns:
+            if conn.status != "ESTABLISHED":
                 continue
-            parts = line.split()
-            if len(parts) < 5:
+            if not conn.laddr or not conn.raddr:
                 continue
 
-            pid_match = re.search(r'pid=(\d+)', line)
-            pid = int(pid_match.group(1)) if pid_match else None
+            pid = conn.pid
             process_name = ""
             if pid:
-                name_match = re.search(r'\("([^"]+)"', line)
-                process_name = name_match.group(1) if name_match else ""
+                try:
+                    process_name = psutil.Process(pid).name()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
 
-            connections.append({"local": parts[3], "remote": parts[4], "pid": pid, "process": process_name})
+            local = f"{conn.laddr.ip}:{conn.laddr.port}"
+            remote = f"{conn.raddr.ip}:{conn.raddr.port}"
+
+            connections.append({"local": local, "remote": remote, "pid": pid, "process": process_name})
 
         connections.sort(key=lambda x: x["remote"])
         return jsonify(connections)

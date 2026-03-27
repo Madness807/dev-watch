@@ -3,9 +3,13 @@
 import subprocess
 import os
 import re
+import sys
 import json
+import psutil
 
 MAX_CMD_LEN = 120
+
+IS_WINDOWS = sys.platform == "win32"
 
 
 def run_cmd(cmd):
@@ -17,7 +21,9 @@ def run_cmd(cmd):
 
 
 def is_in_container(pid):
-    """Check if a PID runs inside a Docker container via /proc cgroup."""
+    """Check if a PID runs inside a Docker container."""
+    if IS_WINDOWS:
+        return False
     try:
         with open(f"/proc/{pid}/cgroup") as f:
             content = f.read()
@@ -38,15 +44,16 @@ def docker_available():
 def get_venv(pid):
     """Detect if a process runs inside a Python venv. Returns venv name or None."""
     try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            argv0 = f.read().split(b"\x00")[0].decode(errors="replace")
-        # If relative path, resolve via cwd
-        if not argv0.startswith("/"):
+        cmdline = psutil.Process(pid).cmdline()
+        argv0 = cmdline[0] if cmdline else ""
+        if argv0 and not os.path.isabs(argv0):
             cwd = get_cwd(pid)
             if cwd != "?":
                 argv0 = os.path.join(cwd, argv0)
     except Exception:
         return None
+    # Normalize path separators for cross-platform matching
+    argv0 = argv0.replace("\\", "/")
     for marker in ("/.venv/", "/venv/", "/virtualenv/", "/.env/"):
         if marker in argv0:
             venv_idx = argv0.index(marker)
@@ -57,15 +64,15 @@ def get_venv(pid):
 
 def get_cwd(pid):
     try:
-        return os.readlink(f"/proc/{pid}/cwd")
+        return psutil.Process(pid).cwd()
     except Exception:
         return "?"
 
 
 def get_cmdline(pid):
     try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            return f.read().replace(b"\x00", b" ").decode(errors="replace").strip()
+        parts = psutil.Process(pid).cmdline()
+        return " ".join(parts).strip()
     except Exception:
         return ""
 
@@ -89,12 +96,12 @@ def get_project_name(cwd, proc_type):
 
 def get_ports_for_pid(pid):
     ports = []
-    out = run_cmd(["ss", "-tlnp"])
-    for line in out.splitlines():
-        if f"pid={pid}," in line:
-            m = re.search(r'(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|\[::1\]|\*):(\d+)', line)
-            if m:
-                ports.append(int(m.group(1)))
+    try:
+        for conn in psutil.net_connections(kind="tcp"):
+            if conn.pid == pid and conn.status == "LISTEN" and conn.laddr:
+                ports.append(conn.laddr.port)
+    except Exception:
+        pass
     return list(set(ports))
 
 
@@ -136,15 +143,17 @@ def classify_process(cmd_full):
 
 
 def is_native_binary(pid):
-    """Check if a PID is a native ELF binary running from user's home."""
+    """Check if a PID is a native binary running from user's home."""
     try:
-        exe = os.readlink(f"/proc/{pid}/exe")
+        exe = psutil.Process(pid).exe()
     except Exception:
         return False
     home = os.path.expanduser("~")
     if not exe.startswith(home):
         return False
-    # Check ELF magic bytes
+    if IS_WINDOWS:
+        return exe.lower().endswith(".exe")
+    # Check ELF magic bytes on Linux/macOS
     try:
         with open(exe, "rb") as f:
             return f.read(4) == b"\x7fELF"
@@ -157,43 +166,29 @@ def is_native_binary(pid):
 def get_cpu_usage(prev_state):
     """Return (cpu_pct, new_state). Pass None for first call."""
     try:
-        with open("/proc/stat") as f:
-            cpu = f.readline().split()
-        idle = int(cpu[4])
-        total = sum(int(x) for x in cpu[1:])
-        if prev_state is None:
-            return 0.0, (total, idle)
-        prev_total, prev_idle = prev_state
-        dt = total - prev_total
-        di = idle - prev_idle
-        pct = round((1 - di / dt) * 100, 1) if dt > 0 else 0.0
-        return pct, (total, idle)
+        pct = psutil.cpu_percent(interval=None)
+        return round(pct, 1), True
     except Exception:
         return 0.0, prev_state
 
 
 def get_ram_usage():
     try:
-        with open("/proc/meminfo") as f:
-            mem = {}
-            for line in f:
-                parts = line.split()
-                mem[parts[0].rstrip(":")] = int(parts[1])
-        total_mb = mem.get("MemTotal", 0) / 1024
-        avail_mb = mem.get("MemAvailable", 0) / 1024
-        used_mb = total_mb - avail_mb
-        return {"used": round(used_mb), "total": round(total_mb), "pct": round(used_mb / total_mb * 100, 1) if total_mb > 0 else 0}
+        mem = psutil.virtual_memory()
+        total_mb = mem.total / (1024 * 1024)
+        used_mb = (mem.total - mem.available) / (1024 * 1024)
+        return {"used": round(used_mb), "total": round(total_mb), "pct": round(mem.percent, 1)}
     except Exception:
         return {"used": 0, "total": 0, "pct": 0}
 
 
 def get_disk_usage():
     try:
-        st = os.statvfs("/")
-        total_gb = (st.f_blocks * st.f_frsize) / (1024**3)
-        free_gb = (st.f_bavail * st.f_frsize) / (1024**3)
-        used_gb = total_gb - free_gb
-        return {"used": round(used_gb, 1), "total": round(total_gb, 1), "pct": round(used_gb / total_gb * 100, 1) if total_gb > 0 else 0}
+        path = "C:\\" if IS_WINDOWS else "/"
+        disk = psutil.disk_usage(path)
+        total_gb = disk.total / (1024 ** 3)
+        used_gb = disk.used / (1024 ** 3)
+        return {"used": round(used_gb, 1), "total": round(total_gb, 1), "pct": round(disk.percent, 1)}
     except Exception:
         return {"used": 0, "total": 0, "pct": 0}
 
