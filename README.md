@@ -1,6 +1,12 @@
-# dev-watch
+<p align="center">
+  <img src="icons/dev-watch-logo.svg" alt="dev-watch logo" width="80" height="80">
+</p>
 
-**v1.0.0** — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+<h1 align="center">DEV WATCH</h1>
+
+<p align="center">
+  <strong>v1.0.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+</p>
 
 <!-- Screenshot will be added in a future update -->
 
