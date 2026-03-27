@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>dev-watch</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+  /* system monospace fonts — zero external requests */
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -23,7 +23,7 @@
     --muted:    #4a5060;
     --text:     #c8d0e0;
     --text-dim: #6b7385;
-    --mono:     'JetBrains Mono', 'Fira Mono', monospace;
+    --mono:     'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', 'Fira Mono', 'Consolas', 'Liberation Mono', monospace;
   }
 
   body {
@@ -74,7 +74,6 @@
   }
   .toolbar input:focus { border-color: var(--green); }
   .toolbar input.filter { width: 180px; }
-  .toolbar input.endpoint { flex: 1; min-width: 220px; }
   .label { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
 
   .btn {
@@ -161,13 +160,16 @@
   .cpu.burn      { color: var(--red); }
 
   .type-tag {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     border-radius: 4px;
-    padding: 1px 7px;
+    padding: 2px 8px;
     font-size: 10px;
     font-weight: 500;
     letter-spacing: .03em;
   }
+  .type-tag img { width: 14px; height: 14px; }
   .type-tag.node   { background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); color: var(--green); }
   .type-tag.python { background: rgba(167,139,250,.1); border: 1px solid rgba(167,139,250,.3); color: var(--purple); }
 
@@ -182,6 +184,49 @@
     margin: 1px;
   }
   .no-port { color: var(--muted); font-size: 11px; }
+  .version-tag {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 9px;
+    font-weight: 500;
+    margin-left: 4px;
+    vertical-align: 1px;
+  }
+  .version-tag.latest {
+    background: rgba(251,191,36,.12);
+    border: 1px solid rgba(251,191,36,.3);
+    color: var(--amber);
+  }
+  .version-tag.pinned {
+    background: rgba(74,222,128,.08);
+    border: 1px solid rgba(74,222,128,.2);
+    color: var(--green);
+  }
+
+  .bind-tag {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 5px;
+    font-size: 9px;
+    font-weight: 500;
+  }
+  .bind-tag.all {
+    background: rgba(248,113,113,.1);
+    border: 1px solid rgba(248,113,113,.3);
+    color: var(--red);
+  }
+  .bind-tag.local {
+    background: rgba(74,222,128,.08);
+    border: 1px solid rgba(74,222,128,.2);
+    color: var(--green);
+  }
+
+  .port-tag.internal {
+    background: rgba(255,255,255,.03);
+    border-color: rgba(255,255,255,.1);
+    color: var(--text-dim);
+  }
 
   .kill-btn, .stop-btn {
     background: transparent;
@@ -304,7 +349,16 @@
 <body>
 
 <div class="titlebar">
-  <div class="titlebar-title">dev-watch -- process monitor</div>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="flex-shrink:0;">
+    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5z" stroke="#4ade80" stroke-width="1.5" fill="none"/>
+    <circle cx="12" cy="12" r="3.5" stroke="#4ade80" stroke-width="1.5" fill="none"/>
+    <circle cx="12" cy="12" r="1.5" fill="#4ade80"/>
+    <path d="M8.5 12h-1M16.5 12h-1" stroke="#38bdf8" stroke-width="0.7" stroke-linecap="round"/>
+    <path d="M12 8.5v-1M12 16.5v-1" stroke="#38bdf8" stroke-width="0.7" stroke-linecap="round"/>
+    <path d="M9.9 9.9l-.6-.6M14.7 14.7l-.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
+    <path d="M14.1 9.9l.6-.6M9.3 14.7l.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
+  </svg>
+  <div class="titlebar-title">dev-watch</div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
@@ -312,13 +366,11 @@
   <span class="label">Filtre :</span>
   <input class="filter" type="text" id="filter" placeholder="pid, projet, port, type..." oninput="renderAll()">
   <span class="label">Type :</span>
-  <button class="btn filter-type node active" data-type="node" onclick="toggleTypeFilter('node')">Node</button>
-  <button class="btn filter-type python active" data-type="python" onclick="toggleTypeFilter('python')">Python</button>
-  <button class="btn filter-type docker active" data-type="docker" onclick="toggleTypeFilter('docker')">Docker</button>
-  <span class="label">API :</span>
-  <input class="endpoint" type="text" id="endpoint" value="http://localhost:3999">
+  <button class="btn filter-type node active" data-type="node" onclick="toggleTypeFilter('node')"><img src="/icons/nodejs.svg" style="width:12px;height:12px;vertical-align:-1px;"> Node</button>
+  <button class="btn filter-type python active" data-type="python" onclick="toggleTypeFilter('python')"><img src="/icons/python.svg" style="width:12px;height:12px;vertical-align:-1px;"> Python</button>
+  <button class="btn filter-type docker active" data-type="docker" onclick="toggleTypeFilter('docker')"><img src="/icons/docker.svg" style="width:12px;height:12px;vertical-align:-1px;"> Docker</button>
   <button class="btn" onclick="fetchData()">Refresh</button>
-  <button class="btn active" id="watch-btn" onclick="toggleWatch()">Watch 5s</button>
+  <button class="btn active" id="watch-btn" onclick="cycleWatch()">Watch 5s</button>
   <button class="btn" id="notif-btn" onclick="requestNotifPermission()">Notifications</button>
   <span class="ep-status idle" id="ep-status">en attente</span>
 </div>
@@ -335,17 +387,15 @@
   <div class="table-wrap">
     <table id="proc-table">
       <thead><tr>
-        <th>TYPE</th>
+        <th class="sortable asc" onclick="sortProcs('type')">TYPE</th>
         <th class="sortable" onclick="sortProcs('pid')">PID</th>
         <th class="sortable" onclick="sortProcs('project')">PROJET</th>
         <th>COMMANDE</th>
-        <th class="sortable desc" onclick="sortProcs('cpu')">CPU %</th>
-        <th class="sortable" onclick="sortProcs('mem')">MEM MB</th>
         <th>PORTS</th>
         <th>REPERTOIRE</th>
         <th></th>
       </tr></thead>
-      <tbody id="proc-body"><tr><td colspan="9" class="empty">Chargement...</td></tr></tbody>
+      <tbody id="proc-body"><tr><td colspan="7" class="empty">Chargement...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -361,9 +411,9 @@
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>ID</th><th>NOM</th><th>IMAGE</th><th>STATUS</th><th>PORTS</th><th></th>
+        <th></th><th>NOM</th><th>IMAGE</th><th>VERSION</th><th>STATUS</th><th>PORTS</th><th></th>
       </tr></thead>
-      <tbody id="docker-body"><tr><td colspan="6" class="empty">Chargement...</td></tr></tbody>
+      <tbody id="docker-body"><tr><td colspan="7" class="empty">Chargement...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -373,13 +423,13 @@
 <!-- Ports -->
 <div>
   <div class="section-header">
-    Ports en ecoute
+    Tous les ports en ecoute (TCP)
     <span id="port-count"></span>
   </div>
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>PORT</th><th>PID</th><th>TYPE</th><th>PROJET</th><th>PROTO</th>
+        <th>PORT</th><th>PROCESSUS</th><th>PID</th><th>BIND</th><th>COMMANDE</th>
       </tr></thead>
       <tbody id="port-body"><tr><td colspan="5" class="empty">Chargement...</td></tr></tbody>
     </table>
@@ -387,8 +437,6 @@
 </div>
 
 <div class="status-bar">
-  <div class="status-item">CPU total : <span class="val" id="total-cpu"></span></div>
-  <div class="status-item">Memoire : <span class="warn" id="total-mem"></span></div>
   <div class="status-item">Processus : <span class="info" id="total-procs"></span></div>
   <div class="status-item">Docker : <span class="info" id="total-docker"></span></div>
   <div class="spacer"></div>
@@ -412,9 +460,11 @@
 <script>
 let procData = [];
 let dockerData = [];
+let portsData = [];
 let actionTarget = null;
 let watchInterval = null;
-let watchActive = true;
+const WATCH_SPEEDS = [3, 5, 10, 0]; // 0 = off
+let watchSpeedIdx = 1; // default 5s
 
 // ── Type filters ──
 const activeTypes = { node: true, python: true, docker: true };
@@ -425,8 +475,83 @@ function toggleTypeFilter(type) {
   renderAll();
 }
 
+// ── Icons ──
+const ICONS = {
+  node: '/icons/nodejs.svg',
+  python: '/icons/python.svg',
+  docker: '/icons/docker.svg',
+  postgres: '/icons/postgresql.svg',
+  redis: '/icons/redis.svg',
+  mongo: '/icons/mongodb.svg',
+  mysql: '/icons/mysql.svg',
+  nginx: '/icons/nginx.svg',
+  traefik: '/icons/traefik.svg',
+  grafana: '/icons/grafana.svg',
+  prometheus: '/icons/prometheus.svg',
+  rabbitmq: '/icons/rabbitmq.svg',
+  elasticsearch: '/icons/elasticsearch.svg',
+  mariadb: '/icons/mariadb.svg',
+  go: '/icons/go.svg',
+  rust: '/icons/rust.svg',
+  ruby: '/icons/ruby.svg',
+  php: '/icons/php.svg',
+  java: '/icons/java.svg',
+  apache: '/icons/apache.svg',
+  loki: '/icons/loki.svg',
+  deno: '/icons/deno.svg',
+};
+
+function typeTag(type) {
+  const icon = ICONS[type] ? `<img src="${ICONS[type]}" alt="${type}">` : '';
+  return `<span class="type-tag ${type}">${icon}${type}</span>`;
+}
+
+function detectImageTech(image) {
+  const img = image.toLowerCase();
+  const patterns = [
+    [/node|next|nuxt|vite|react|vue|angular/, 'node'],
+    [/python|django|flask|fastapi|uvicorn|gunicorn/, 'python'],
+    [/postgres|postgis/, 'postgres'],
+    [/redis/, 'redis'],
+    [/mongo/, 'mongo'],
+    [/mysql/, 'mysql'],
+    [/mariadb/, 'mariadb'],
+    [/nginx/, 'nginx'],
+    [/traefik/, 'traefik'],
+    [/grafana/, 'grafana'],
+    [/rabbitmq/, 'rabbitmq'],
+    [/elasticsearch|elastic/, 'elasticsearch'],
+    [/golang|go:/, 'go'],
+    [/rust/, 'rust'],
+    [/ruby|rails/, 'ruby'],
+    [/php|laravel/, 'php'],
+    [/java|spring|tomcat/, 'java'],
+    [/apache|httpd/, 'apache'],
+    [/prometheus/, 'prometheus'],
+    [/loki/, 'loki'],
+    [/deno/, 'deno'],
+  ];
+  for (const [re, tech] of patterns) {
+    if (re.test(img)) return tech;
+  }
+  return null;
+}
+
+function imageVersion(image) {
+  const parts = image.split(':');
+  const tag = parts.length > 1 ? parts[parts.length - 1] : 'latest';
+  const isLatest = tag === 'latest';
+  return `<span class="version-tag ${isLatest ? 'latest' : 'pinned'}">${esc(tag)}</span>`;
+}
+
+function techIcon(name, image) {
+  const tech = detectImageTech(name) || detectImageTech(image);
+  if (!tech || !ICONS[tech]) return '';
+  return `<img src="${ICONS[tech]}" alt="${tech}" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px;">`;
+}
+
 // ── Sort state ──
-let procSort = { key: 'cpu', dir: 'desc' };
+let procSort = { key: 'type', dir: 'asc' };
 
 function sortProcs(key) {
   if (procSort.key === key) {
@@ -516,7 +641,7 @@ function checkNotifications(newProcs, newDocker) {
 }
 
 // ── Core ──
-function apiBase() { return document.getElementById('endpoint').value.trim().replace(/\/$/, ''); }
+function apiBase() { return window.location.origin; }
 
 function setStatus(msg, cls) {
   const el = document.getElementById('ep-status');
@@ -540,13 +665,15 @@ function esc(s) {
 async function fetchData() {
   try {
     setStatus('fetch...', 'idle');
-    const [psRes, dockerRes] = await Promise.all([
+    const [psRes, dockerRes, portsRes] = await Promise.all([
       fetch(apiBase() + '/api/ps', { signal: AbortSignal.timeout(5000) }),
-      fetch(apiBase() + '/api/docker', { signal: AbortSignal.timeout(5000) }).catch(() => null)
+      fetch(apiBase() + '/api/docker', { signal: AbortSignal.timeout(5000) }).catch(() => null),
+      fetch(apiBase() + '/api/ports', { signal: AbortSignal.timeout(5000) }).catch(() => null)
     ]);
     if (!psRes.ok) throw new Error('HTTP ' + psRes.status);
     procData = await psRes.json();
     dockerData = dockerRes && dockerRes.ok ? await dockerRes.json() : [];
+    portsData = portsRes && portsRes.ok ? await portsRes.json() : [];
     updateHistory(procData);
     checkNotifications(procData, dockerData);
     setStatus('connecte', 'ok');
@@ -576,7 +703,8 @@ function matchDocker(r, f) {
     r.name.toLowerCase().includes(f) ||
     r.image.toLowerCase().includes(f) ||
     r.status.toLowerCase().includes(f) ||
-    r.ports.some(p => String(p).includes(f));
+    (r.ports || []).some(p => String(p.host).includes(f) || String(p.container).includes(f)) ||
+    (r.internal_ports || []).some(p => String(p).includes(f));
 }
 
 function cpuClass(v) { return v > 15 ? 'cpu burn' : v > 8 ? 'cpu hot' : 'cpu'; }
@@ -588,15 +716,11 @@ function renderAll() {
   const filteredDocker = dockerData.filter(r => matchDocker(r, f));
   renderProcs(filteredProcs);
   renderDocker(filteredDocker);
-  renderPorts(filteredProcs);
+  renderPorts(portsData);
 
   // docker section visibility
   document.getElementById('docker-section').style.display = activeTypes.docker ? '' : 'none';
 
-  const totalCpu = procData.reduce((a,r) => a + r.cpu, 0).toFixed(1);
-  const totalMem = procData.reduce((a,r) => a + r.mem, 0).toFixed(0);
-  document.getElementById('total-cpu').textContent = totalCpu + '%';
-  document.getElementById('total-mem').textContent = totalMem + ' MB';
   document.getElementById('total-procs').textContent = procData.length;
   document.getElementById('total-docker').textContent = dockerData.length;
   document.getElementById('last-scan').textContent = 'Derniere analyse : ' + ts();
@@ -606,7 +730,7 @@ function renderProcs(rows) {
   document.getElementById('proc-count').textContent = rows.length + ' trouve(s)';
   const tbody = document.getElementById('proc-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">Aucun processus detecte</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">Aucun processus detecte</td></tr>';
     return;
   }
 
@@ -621,17 +745,22 @@ function renderProcs(rows) {
 
   tbody.innerHTML = rows.map((r, i) => `
     <tr style="animation-delay:${i * 35}ms">
-      <td><span class="type-tag ${r.type}">${r.type}</span></td>
+      <td>${typeTag(r.type)}</td>
       <td class="pid">${r.pid}</td>
       <td class="project">${esc(r.project)}</td>
       <td class="cmd" title="${esc(r.cmd)}">${esc(r.cmd)}</td>
-      <td class="${cpuClass(r.cpu)}">${r.cpu.toFixed(1)}%${sparkline(cpuHistory[r.pid] || [], r.cpu > 15 ? '#f87171' : r.cpu > 8 ? '#fbbf24' : '#4ade80')}</td>
-      <td>${r.mem} MB${sparkline(memHistory[r.pid] || [], '#38bdf8')}</td>
       <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">&mdash;</span>'}</td>
       <td class="dir" title="${esc(r.dir)}">${esc(r.dir)}</td>
       <td><button class="kill-btn" onclick="askKill(${r.pid},'${esc(r.project).replace(/'/g,"\\'")}')">kill</button></td>
     </tr>
   `).join('');
+}
+
+function dockerPorts(r) {
+  const bound = (r.ports || []).map(p => `<span class="port-tag">${p.host}:${p.container}</span>`);
+  const internal = (r.internal_ports || []).map(p => `<span class="port-tag internal">:${p}</span>`);
+  const all = bound.concat(internal);
+  return all.length ? all.join('') : '<span class="no-port">&mdash;</span>';
 }
 
 // ── Docker accordion ──
@@ -645,11 +774,15 @@ function getProjectHealth(containers) {
   return 'green';
 }
 
+function isCollapsed(proj) {
+  return accordionState[proj] !== true;
+}
+
 function toggleAccordion(proj) {
-  accordionState[proj] = !accordionState[proj];
+  accordionState[proj] = isCollapsed(proj) ? true : false;
   const header = document.querySelector(`[data-project="${CSS.escape(proj)}"]`);
   const rows = document.querySelectorAll(`[data-group="${CSS.escape(proj)}"]`);
-  if (accordionState[proj]) {
+  if (isCollapsed(proj)) {
     header.classList.add('collapsed');
     rows.forEach(r => r.style.display = 'none');
   } else {
@@ -662,7 +795,7 @@ function renderDocker(rows) {
   document.getElementById('docker-count').textContent = rows.length + ' conteneur(s)';
   const tbody = document.getElementById('docker-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">Aucun conteneur Docker en cours</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">Aucun conteneur Docker en cours</td></tr>';
     return;
   }
 
@@ -681,14 +814,15 @@ function renderDocker(rows) {
   let idx = 0;
 
   function containerRow(r, group) {
-    const collapsed = group && accordionState[group];
+    const collapsed = group && isCollapsed(group);
     const row = `
       <tr style="animation-delay:${idx * 35}ms;${collapsed ? 'display:none;' : ''}" ${group ? `data-group="${esc(group)}"` : ''}>
-        <td style="color:var(--text-dim);font-size:11px;">${esc(r.id.substring(0,12))}</td>
+        <td style="text-align:center;">${techIcon(r.name, r.image)}</td>
         <td class="project">${esc(r.name)}</td>
         <td style="color:var(--purple);font-size:11px;">${esc(r.image)}</td>
+        <td>${imageVersion(r.image)}</td>
         <td><span class="docker-status ${r.status.toLowerCase().startsWith('up') ? 'up' : 'other'}">${esc(r.status)}</span></td>
-        <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">&mdash;</span>'}</td>
+        <td>${dockerPorts(r)}</td>
         <td>
           <button class="restart-btn" onclick="askDockerRestart('${esc(r.id)}','${esc(r.name).replace(/'/g,"\\'")}')">restart</button>
           <button class="stop-btn" onclick="askDockerStop('${esc(r.id)}','${esc(r.name).replace(/'/g,"\\'")}')">stop</button>
@@ -700,13 +834,14 @@ function renderDocker(rows) {
 
   Object.keys(groups).sort().forEach(proj => {
     const health = getProjectHealth(groups[proj]);
-    const collapsed = accordionState[proj];
+    const collapsed = isCollapsed(proj);
     html += `
       <tr>
-        <td colspan="6" style="padding:0;border:0;">
+        <td colspan="7" style="padding:0;border:0;">
           <div class="project-header ${collapsed ? 'collapsed' : ''}" data-project="${esc(proj)}" onclick="toggleAccordion('${esc(proj).replace(/'/g,"\\'")}')">
             <span class="chevron">&#9660;</span>
             <span class="health-dot ${health}"></span>
+            <img src="${ICONS.docker}" alt="docker" style="width:14px;height:14px;">
             ${esc(proj)}
             <span class="container-count">${groups[proj].length} conteneur(s)</span>
           </div>
@@ -721,21 +856,27 @@ function renderDocker(rows) {
 }
 
 function renderPorts(rows) {
-  const portRows = [];
-  rows.forEach(r => r.ports.forEach(p => portRows.push({ port: p, pid: r.pid, type: r.type, project: r.project })));
-  document.getElementById('port-count').textContent = portRows.length + ' port(s)';
+  const f = getFilter();
+  const filtered = rows.filter(r => {
+    if (!f) return true;
+    return String(r.port).includes(f) ||
+      r.process.toLowerCase().includes(f) ||
+      r.cmd.toLowerCase().includes(f) ||
+      String(r.pid).includes(f);
+  });
+  document.getElementById('port-count').textContent = filtered.length + ' port(s)';
   const tbody = document.getElementById('port-body');
-  if (!portRows.length) {
+  if (!filtered.length) {
     tbody.innerHTML = '<tr><td colspan="5" class="empty">Aucun port en ecoute</td></tr>';
     return;
   }
-  tbody.innerHTML = portRows.map((r, i) => `
+  tbody.innerHTML = filtered.map((r, i) => `
     <tr style="animation-delay:${i * 35}ms">
       <td><span class="port-tag">:${r.port}</span></td>
-      <td class="pid">${r.pid}</td>
-      <td><span class="type-tag ${r.type}">${r.type}</span></td>
-      <td class="project">${esc(r.project)}</td>
-      <td style="color:var(--text-dim);font-size:11px;">TCP</td>
+      <td class="project">${esc(r.process)}</td>
+      <td class="pid">${r.pid || ''}</td>
+      <td><span class="bind-tag ${r.bind}">${r.bind === 'all' ? '0.0.0.0' : '127.0.0.1'}</span></td>
+      <td class="cmd" title="${esc(r.cmd)}">${esc(r.cmd)}</td>
     </tr>
   `).join('');
 }
@@ -804,28 +945,28 @@ async function confirmAction() {
 }
 
 // ── Watch ──
-function toggleWatch() {
-  watchActive = !watchActive;
+function cycleWatch() {
+  watchSpeedIdx = (watchSpeedIdx + 1) % WATCH_SPEEDS.length;
+  applyWatch();
+}
+
+function applyWatch() {
+  clearInterval(watchInterval);
+  const speed = WATCH_SPEEDS[watchSpeedIdx];
   const btn = document.getElementById('watch-btn');
-  if (watchActive) {
-    btn.textContent = 'Watch 5s';
+  if (speed > 0) {
+    btn.textContent = 'Watch ' + speed + 's';
     btn.classList.add('active');
-    startWatch();
+    watchInterval = setInterval(fetchData, speed * 1000);
   } else {
     btn.textContent = 'Watch off';
     btn.classList.remove('active');
-    clearInterval(watchInterval);
   }
-}
-
-function startWatch() {
-  clearInterval(watchInterval);
-  watchInterval = setInterval(fetchData, 5000);
 }
 
 // ── Init ──
 fetchData();
-startWatch();
+applyWatch();
 if ('Notification' in window && Notification.permission === 'granted') {
   document.getElementById('notif-btn').classList.add('active');
 }

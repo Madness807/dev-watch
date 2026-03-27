@@ -15,11 +15,21 @@ import signal
 import os
 import re
 import json
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:*", "http://127.0.0.1:*"])
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+@app.route("/")
+def serve_dashboard():
+    return send_from_directory(BASE_DIR, "dev-watch.html")
+
+@app.route("/icons/<path:filename>")
+def serve_icon(filename):
+    return send_from_directory(os.path.join(BASE_DIR, "icons"), filename)
 
 PORT = 3999
 
@@ -78,7 +88,7 @@ def get_ports_for_pid(pid):
     out = run_cmd(["ss", "-tlnp"])
     for line in out.splitlines():
         if f"pid={pid}," in line:
-            m = re.search(r'(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]):(\d+)', line)
+            m = re.search(r'(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|\[::1\]|\*):(\d+)', line)
             if m:
                 ports.append(int(m.group(1)))
     return list(set(ports))
@@ -215,16 +225,33 @@ def api_docker():
 
         cid = c.get("ID", "")
         ports_raw = c.get("Ports", "")
-        ports = []
-        for m in re.finditer(r':(\d+)->', ports_raw):
-            ports.append(int(m.group(1)))
+        bound_ports = []
+        internal_ports = []
+        # match host-bound ports (0.0.0.0:8080->8080/tcp)
+        bound_container = set()
+        for m in re.finditer(r':(\d+)->(\d+)', ports_raw):
+            bound_ports.append({"host": int(m.group(1)), "container": int(m.group(2))})
+            bound_container.add(m.group(2))
+        # deduplicate (same mapping can appear for ipv4 and ipv6)
+        seen = set()
+        unique_bound = []
+        for p in bound_ports:
+            key = (p["host"], p["container"])
+            if key not in seen:
+                seen.add(key)
+                unique_bound.append(p)
+        # match exposed-only ports (5432/tcp) not already bound
+        for m in re.finditer(r'(\d+)/(?:tcp|udp)', ports_raw):
+            if m.group(1) not in bound_container:
+                internal_ports.append(int(m.group(1)))
 
         containers.append({
             "id": cid,
             "name": c.get("Names", ""),
             "image": c.get("Image", ""),
             "status": c.get("Status", ""),
-            "ports": ports,
+            "ports": unique_bound,
+            "internal_ports": list(set(internal_ports)),
             "project": project_map.get(cid[:12], ""),
             "health": health_map.get(cid[:12], "none"),
         })
@@ -294,6 +321,50 @@ def api_kill():
         return jsonify({"error": "Processus introuvable"}), 404
     except PermissionError:
         return jsonify({"error": "Permission refusee"}), 403
+
+
+@app.route("/api/ports")
+def api_ports():
+    """Liste tous les ports TCP en ecoute sur la machine."""
+    out = run_cmd(["ss", "-tlnp"])
+    ports = []
+    seen = set()
+    for line in out.splitlines()[1:]:
+        # parse address:port
+        m = re.search(r'(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|\[::1\]|\*):(\d+)', line)
+        if not m:
+            continue
+        port = int(m.group(1))
+        if port in seen:
+            continue
+        seen.add(port)
+
+        # parse process info
+        pid_match = re.search(r'pid=(\d+)', line)
+        pid = int(pid_match.group(1)) if pid_match else None
+        process_name = ""
+        cmd = ""
+        if pid:
+            name_match = re.search(r'\("([^"]+)"', line)
+            process_name = name_match.group(1) if name_match else ""
+            cmd = get_cmdline(pid)[:80]
+
+        # determine bind type
+        if '0.0.0.0' in line or '[::]' in line or '*' in line:
+            bind = "all"
+        else:
+            bind = "local"
+
+        ports.append({
+            "port": port,
+            "pid": pid,
+            "process": process_name,
+            "cmd": cmd,
+            "bind": bind,
+        })
+
+    ports.sort(key=lambda x: x["port"])
+    return jsonify(ports)
 
 
 @app.route("/api/health")

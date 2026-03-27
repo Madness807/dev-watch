@@ -2,7 +2,7 @@
 cd "$(dirname "$0")"
 
 # Kill l'ancien serveur si il tourne
-pkill -f "python3.*server.py" 2>/dev/null
+pkill -f "python3 $(pwd)/server.py" 2>/dev/null
 
 # Lance le serveur en arrière-plan
 python3 server.py &
@@ -15,7 +15,7 @@ for i in {1..10}; do
 done
 
 # Ouvre le dashboard
-xdg-open "$(pwd)/dev-watch.html" 2>/dev/null
+xdg-open "http://localhost:3999" 2>/dev/null
 
 echo "dev-watch demarre (PID: $SERVER_PID)"
 echo "Ctrl+C pour arreter"
