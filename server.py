@@ -2,14 +2,14 @@
 # ─────────────────────────────────────────────
 #  dev-watch — server.py
 #  Deps    : pip install flask flask-cors
-#  System  : ss (iproute2), docker (optionnel), nvidia-smi (optionnel)
+#  System  : ss (iproute2), docker (optional), nvidia-smi (optional)
 #  Launch  : python3 server.py
-#  API     : GET  /api/ps             (processus Node + Python)
-#            GET  /api/docker         (conteneurs Docker)
-#            GET  /api/ports          (ports TCP en ecoute)
-#            GET  /api/connections    (connexions TCP actives)
-#            GET  /api/system         (CPU, RAM, disque, GPU)
-#            GET  /api/docker/disk    (espace disque Docker)
+#  API     : GET  /api/ps             (Node + Python processes)
+#            GET  /api/docker         (Docker containers)
+#            GET  /api/ports          (listening TCP ports)
+#            GET  /api/connections    (active TCP connections)
+#            GET  /api/system         (CPU, RAM, disk, GPU)
+#            GET  /api/docker/disk    (Docker disk usage)
 #            POST /api/kill           {"pid": 1234}
 #            POST /api/docker/stop    {"id": "abc123"}
 #            POST /api/docker/restart {"id": "abc123"}
@@ -31,7 +31,7 @@ PORT = 3999
 MAX_CMD_LEN = 120
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Allowlists: seuls les PIDs/containers vus par le dernier scan peuvent etre actionnables
+# Allowlists: only PIDs/containers seen by the last scan can be acted upon
 known_pids = set()
 known_container_ids = set()
 
@@ -120,15 +120,15 @@ def docker_action(action):
     data = request.get_json()
     container_id = data.get("id") if data else None
     if not container_id or not isinstance(container_id, str):
-        return jsonify({"error": "ID conteneur invalide"}), 400
+        return jsonify({"error": "Invalid container ID"}), 400
     if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
-        return jsonify({"error": "ID conteneur invalide"}), 400
+        return jsonify({"error": "Invalid container ID"}), 400
     if container_id not in known_container_ids:
-        return jsonify({"error": "Conteneur non reconnu"}), 403
+        return jsonify({"error": "Container not recognized"}), 403
     result = run_cmd(["docker", action, container_id])
     if result.strip():
         return jsonify({"ok": True, "id": container_id})
-    return jsonify({"error": f"Impossible: docker {action}"}), 500
+    return jsonify({"error": f"Failed: docker {action}"}), 500
 
 # ── API routes ───────────────────────────────
 
@@ -272,19 +272,19 @@ def api_kill():
     pid = data.get("pid") if data else None
 
     if not pid or not isinstance(pid, int):
-        return jsonify({"error": "PID invalide"}), 400
+        return jsonify({"error": "Invalid PID"}), 400
     if pid <= 1 or pid == os.getpid():
-        return jsonify({"error": "PID protege"}), 403
+        return jsonify({"error": "Protected PID"}), 403
     if pid not in known_pids:
-        return jsonify({"error": "PID non reconnu"}), 403
+        return jsonify({"error": "PID not recognized"}), 403
 
     try:
         os.kill(pid, signal.SIGTERM)
         return jsonify({"ok": True, "pid": pid, "signal": "SIGTERM"})
     except ProcessLookupError:
-        return jsonify({"error": "Processus introuvable"}), 404
+        return jsonify({"error": "Process not found"}), 404
     except PermissionError:
-        return jsonify({"error": "Permission refusee"}), 403
+        return jsonify({"error": "Permission denied"}), 403
 
 
 @app.route("/api/ports")
@@ -435,6 +435,6 @@ if __name__ == "__main__":
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-    print(f"\n  dev-watch sur http://localhost:{PORT}")
-    print(f"  Ctrl+C pour arreter\n")
+    print(f"\n  dev-watch at http://localhost:{PORT}")
+    print(f"  Ctrl+C to stop\n")
     app.run(host="127.0.0.1", port=PORT, debug=False)
