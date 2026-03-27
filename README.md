@@ -2,13 +2,25 @@
 
 **v1.0.0** — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 
-![dev-watch demo](screenshots/dev-watch-demo.gif)
+<!-- Screenshot will be added in a future update -->
 
 > [!CAUTION]
 > **This tool is designed for LOCAL USE ONLY.**
 > It must NEVER be exposed on a network, VPN, reverse proxy, or the Internet.
 > There is no authentication. Anyone who can reach port 3999 can see your processes
 > and kill them. Do not change the bind from `127.0.0.1` to `0.0.0.0`.
+
+## Tech Stack
+
+| Technology | Usage |
+|-----------|-------|
+| ![Python](https://img.shields.io/badge/Python_3-3776AB?logo=python&logoColor=white) | Backend server, process scanning, system metrics |
+| ![Flask](https://img.shields.io/badge/Flask-000000?logo=flask&logoColor=white) | REST API + static file serving |
+| ![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white) | Single-file dashboard (no build step) |
+| ![JavaScript](https://img.shields.io/badge/Vanilla_JS-F7DF1E?logo=javascript&logoColor=black) | Frontend logic, Web Audio API, Notification toasts |
+| ![CSS3](https://img.shields.io/badge/CSS3-1572B6?logo=css3&logoColor=white) | Dark theme, responsive layout, animations |
+| ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white) | Container monitoring (optional) |
+| ![SVG](https://img.shields.io/badge/SVG_Icons-FFB13B?logo=svg&logoColor=black) | 22 local tech icons (zero CDN) |
 
 ## Features
 
@@ -45,6 +57,34 @@
 - Disclaimer button with security rules
 - Zero external network calls (local icons, no CDN, no Google Fonts)
 
+## Installation
+
+```bash
+# Clone the repo
+git clone https://github.com/Madness807/dev-watch.git
+cd dev-watch
+
+# Launch (auto-creates venv + installs dependencies on first run)
+./start.sh
+```
+
+That's it. `start.sh` handles everything:
+1. Creates a Python virtual environment (`.venv/`) if it doesn't exist
+2. Installs `flask` and `flask-cors` inside the venv
+3. Starts the server on `http://localhost:3999`
+4. Opens the dashboard in your browser
+
+Press `Ctrl+C` to stop.
+
+### Systemd (optional, auto-start on boot)
+
+```bash
+# Edit dev-watch.service: update User and paths to match your setup
+sudo cp dev-watch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dev-watch
+```
+
 ## Security
 
 A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes all security measures in place.
@@ -58,6 +98,7 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 - **HTML escaping**: XSS protection on all dynamic data
 - **Docker filtering**: processes running inside containers are excluded from the Processes section
 - **Dashboard served by Flask**: no file://, same origin
+- **Virtual environment**: dependencies isolated from system Python
 
 ### Not protected (by design)
 - No authentication (unnecessary on 127.0.0.1)
@@ -72,7 +113,8 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 | `server.py` | Flask server (port 3999): REST API + serves the dashboard |
 | `dev-watch.html` | Web interface: consumes the API |
 | `icons/` | 22 local SVG icons (tech detection) |
-| `start.sh` | Starts the server and opens the browser |
+| `start.sh` | Launcher: creates venv, installs deps, starts server, opens browser |
+| `requirements.txt` | Python dependencies |
 | `dev-watch.service` | Systemd service file (optional) |
 
 ## API
@@ -91,47 +133,12 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 | `/api/docker/restart` | POST | Restart container (`{"id": "abc123"}`) — allowlist only |
 | `/api/health` | GET | Health check |
 
-## Installation
-
-```bash
-# Clone the repo
-git clone https://github.com/Madness807/dev-watch.git
-cd dev-watch
-
-# Install dependencies
-pip install flask flask-cors --break-system-packages
-
-# Launch
-./start.sh
-```
-
-This starts the server on `http://localhost:3999` and opens the dashboard in your browser. Press `Ctrl+C` to stop.
-
-### Systemd (optional, auto-start on boot)
-
-```bash
-# Edit dev-watch.service: update User and paths to match your setup
-sudo cp dev-watch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now dev-watch
-```
-
-## Contributing
-
-Contributions are welcome. Please open an issue first to discuss what you'd like to change.
-
-- Fork the repo
-- Create a feature branch (`git checkout -b feat/my-feature`)
-- Commit your changes
-- Push and open a Pull Request
-
 ## Requirements
 
-- Python 3
-- Flask + flask-cors
+- Python 3.8+
 - **Linux** (uses `/proc` for process info)
 - Docker (optional)
-- nvidia-smi (optional, for GPU)
+- nvidia-smi (optional, for GPU metrics)
 
 ## Platform Support
 
@@ -144,6 +151,15 @@ Contributions are welcome. Please open an issue first to discuss what you'd like
 
 > [!NOTE]
 > **macOS and Windows support are planned for a future release.** Contributions welcome.
+
+## Contributing
+
+Contributions are welcome. Please open an issue first to discuss what you'd like to change.
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feat/my-feature`)
+3. Commit your changes
+4. Push and open a Pull Request
 
 ## License
 

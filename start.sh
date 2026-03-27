@@ -1,11 +1,19 @@
 #!/bin/bash
 cd "$(dirname "$0")"
 
+# Create venv if it doesn't exist
+if [ ! -d ".venv" ]; then
+  echo "Creating virtual environment..."
+  python3 -m venv .venv
+  .venv/bin/pip install -q -r requirements.txt
+  echo "Dependencies installed."
+fi
+
 # Kill previous server if running
 pkill -f "python3 $(pwd)/server.py" 2>/dev/null
 
-# Start server in background
-python3 server.py &
+# Start server using venv Python
+.venv/bin/python3 server.py &
 SERVER_PID=$!
 
 # Wait for server to be ready
