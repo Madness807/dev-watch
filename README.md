@@ -2,6 +2,8 @@
 
 **v1.0.0** — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 
+![dev-watch demo](screenshots/dev-watch-demo.gif)
+
 > [!CAUTION]
 > **This tool is designed for LOCAL USE ONLY.**
 > It must NEVER be exposed on a network, VPN, reverse proxy, or the Internet.
@@ -92,9 +94,36 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 ## Installation
 
 ```bash
+# Clone the repo
+git clone https://github.com/Madness807/dev-watch.git
+cd dev-watch
+
+# Install dependencies
 pip install flask flask-cors --break-system-packages
-~/npm-watch/start.sh
+
+# Launch
+./start.sh
 ```
+
+This starts the server on `http://localhost:3999` and opens the dashboard in your browser. Press `Ctrl+C` to stop.
+
+### Systemd (optional, auto-start on boot)
+
+```bash
+# Edit dev-watch.service: update User and paths to match your setup
+sudo cp dev-watch.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now dev-watch
+```
+
+## Contributing
+
+Contributions are welcome. Please open an issue first to discuss what you'd like to change.
+
+- Fork the repo
+- Create a feature branch (`git checkout -b feat/my-feature`)
+- Commit your changes
+- Push and open a Pull Request
 
 ## Requirements
 
@@ -115,3 +144,7 @@ pip install flask flask-cors --break-system-packages
 
 > [!NOTE]
 > **macOS and Windows support are planned for a future release.** Contributions welcome.
+
+## License
+
+[MIT](LICENSE)
