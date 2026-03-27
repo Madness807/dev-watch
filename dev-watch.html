@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>npm-watch</title>
+<title>dev-watch</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
@@ -18,11 +18,12 @@
     --cyan:     #38bdf8;
     --amber:    #fbbf24;
     --red:      #f87171;
+    --purple:   #a78bfa;
+    --blue:     #60a5fa;
     --muted:    #4a5060;
     --text:     #c8d0e0;
     --text-dim: #6b7385;
     --mono:     'JetBrains Mono', 'Fira Mono', monospace;
-    --api:      http://localhost:3999;
   }
 
   body {
@@ -45,10 +46,7 @@
     top: 0;
     z-index: 10;
   }
-  .dots { display: flex; gap: 6px; }
-  .dot { width: 12px; height: 12px; border-radius: 50%; }
-  .dot.r { background: #ff5f57; } .dot.y { background: #ffbd2e; } .dot.g { background: #28c840; }
-  .titlebar-title { flex: 1; text-align: center; font-size: 12px; color: var(--text-dim); letter-spacing: .05em; }
+  .titlebar-title { flex: 1; font-size: 12px; color: var(--text-dim); letter-spacing: .05em; }
   .live-badge { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--green); }
   .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 1.5s ease-in-out infinite; }
   @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(.7)} }
@@ -93,7 +91,11 @@
   }
   .btn:hover { border-color: var(--green); color: var(--green); }
   .btn.active { border-color: var(--green); color: var(--green); background: rgba(74,222,128,.06); }
-  .btn.danger:hover { border-color: var(--red); color: var(--red); }
+
+  /* type filter buttons */
+  .btn.filter-type.node.active   { border-color: var(--green); color: var(--green); background: rgba(74,222,128,.06); }
+  .btn.filter-type.python.active { border-color: var(--purple); color: var(--purple); background: rgba(167,139,250,.06); }
+  .btn.filter-type.docker.active { border-color: var(--blue); color: var(--blue); background: rgba(96,165,250,.06); }
 
   .ep-status { font-size: 11px; white-space: nowrap; }
   .ep-status.ok  { color: var(--green); }
@@ -133,6 +135,11 @@
     white-space: nowrap;
     border-bottom: 1px solid var(--border);
   }
+  thead th.sortable { cursor: pointer; user-select: none; transition: color .15s; }
+  thead th.sortable:hover { color: var(--green); }
+  thead th.sortable::after { content: ''; margin-left: 4px; font-size: 9px; }
+  thead th.sortable.asc::after { content: ' ▲'; }
+  thead th.sortable.desc::after { content: ' ▼'; }
   tbody tr {
     border-bottom: 1px solid rgba(255,255,255,.03);
     transition: background .1s;
@@ -146,12 +153,23 @@
 
   .pid     { color: var(--amber); font-weight: 500; font-size: 13px; }
   .project { color: var(--cyan); font-weight: 500; }
-  .cmd     { color: var(--text-dim); font-size: 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  .cmd     { color: var(--text-dim); font-size: 11px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
   .dir     { color: var(--text-dim); font-size: 11px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 
   .cpu           { color: var(--text); }
   .cpu.hot       { color: var(--amber); }
   .cpu.burn      { color: var(--red); }
+
+  .type-tag {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .03em;
+  }
+  .type-tag.node   { background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); color: var(--green); }
+  .type-tag.python { background: rgba(167,139,250,.1); border: 1px solid rgba(167,139,250,.3); color: var(--purple); }
 
   .port-tag {
     display: inline-block;
@@ -165,7 +183,7 @@
   }
   .no-port { color: var(--muted); font-size: 11px; }
 
-  .kill-btn {
+  .kill-btn, .stop-btn {
     background: transparent;
     border: 1px solid rgba(248,113,113,.2);
     border-radius: 4px;
@@ -176,20 +194,7 @@
     cursor: pointer;
     transition: all .15s;
   }
-  .kill-btn:hover { border-color: var(--red); color: var(--red); background: rgba(248,113,113,.08); }
-
-  .stop-btn {
-    background: transparent;
-    border: 1px solid rgba(248,113,113,.2);
-    border-radius: 4px;
-    color: rgba(248,113,113,.5);
-    font-family: var(--mono);
-    font-size: 11px;
-    padding: 2px 8px;
-    cursor: pointer;
-    transition: all .15s;
-  }
-  .stop-btn:hover { border-color: var(--red); color: var(--red); background: rgba(248,113,113,.08); }
+  .kill-btn:hover, .stop-btn:hover { border-color: var(--red); color: var(--red); background: rgba(248,113,113,.08); }
 
   .restart-btn {
     background: transparent;
@@ -225,10 +230,38 @@
   .info { color: var(--cyan); }
   .spacer { flex: 1; }
 
-  /* ── Kill modal (faux viewport pour éviter position:fixed) ── */
+  /* ── Docker status ── */
+  .docker-status { font-size: 11px; font-weight: 500; }
+  .docker-status.up { color: var(--green); }
+  .docker-status.other { color: var(--amber); }
+
+  /* ── Accordion project header ── */
+  .project-header {
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--blue);
+    background: rgba(96,165,250,.04);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    user-select: none;
+    transition: background .15s;
+  }
+  .project-header:hover { background: rgba(96,165,250,.08); }
+  .project-header .chevron { font-size: 10px; transition: transform .2s; color: var(--text-dim); }
+  .project-header.collapsed .chevron { transform: rotate(-90deg); }
+  .health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .health-dot.green  { background: var(--green); box-shadow: 0 0 4px rgba(74,222,128,.4); }
+  .health-dot.red    { background: var(--red); box-shadow: 0 0 4px rgba(248,113,113,.4); }
+  .health-dot.orange { background: var(--amber); box-shadow: 0 0 4px rgba(251,191,36,.4); }
+  .project-header .container-count { font-size: 10px; color: var(--text-dim); font-weight: 400; margin-left: auto; }
+
+  /* ── Modal ── */
   .modal-backdrop {
     display: none;
-    min-height: 200px;
     background: rgba(0,0,0,.7);
     align-items: center;
     justify-content: center;
@@ -271,108 +304,219 @@
 <body>
 
 <div class="titlebar">
-  <div class="dots">
-    <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
-  </div>
-  <div class="titlebar-title">npm-watch — process monitor</div>
+  <div class="titlebar-title">dev-watch -- process monitor</div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
 <div class="toolbar">
   <span class="label">Filtre :</span>
-  <input class="filter" type="text" id="filter" placeholder="pid, projet, port..." oninput="renderAll()">
+  <input class="filter" type="text" id="filter" placeholder="pid, projet, port, type..." oninput="renderAll()">
+  <span class="label">Type :</span>
+  <button class="btn filter-type node active" data-type="node" onclick="toggleTypeFilter('node')">Node</button>
+  <button class="btn filter-type python active" data-type="python" onclick="toggleTypeFilter('python')">Python</button>
+  <button class="btn filter-type docker active" data-type="docker" onclick="toggleTypeFilter('docker')">Docker</button>
   <span class="label">API :</span>
   <input class="endpoint" type="text" id="endpoint" value="http://localhost:3999">
-  <button class="btn active" id="watch-btn" onclick="toggleWatch()">⏸ Watch 3s</button>
-  <span class="ep-status idle" id="ep-status">— en attente</span>
+  <button class="btn" onclick="fetchData()">Refresh</button>
+  <button class="btn active" id="watch-btn" onclick="toggleWatch()">Watch 5s</button>
+  <button class="btn" id="notif-btn" onclick="requestNotifPermission()">Notifications</button>
+  <span class="ep-status idle" id="ep-status">en attente</span>
 </div>
 
 <div class="error-banner" id="error-banner"></div>
 <div class="scan-wrap"><div class="scan-bar"></div></div>
 
+<!-- Processus Node + Python -->
 <div>
   <div class="section-header">
-    Processus Node / npm
-    <span id="proc-count">—</span>
+    Processus Node / Python
+    <span id="proc-count"></span>
   </div>
   <div class="table-wrap">
-    <table>
+    <table id="proc-table">
       <thead><tr>
-        <th>PID</th><th>PROJET</th><th>COMMANDE</th>
-        <th>CPU %</th><th>MEM MB</th><th>PORTS</th><th>RÉPERTOIRE</th><th></th>
+        <th>TYPE</th>
+        <th class="sortable" onclick="sortProcs('pid')">PID</th>
+        <th class="sortable" onclick="sortProcs('project')">PROJET</th>
+        <th>COMMANDE</th>
+        <th class="sortable desc" onclick="sortProcs('cpu')">CPU %</th>
+        <th class="sortable" onclick="sortProcs('mem')">MEM MB</th>
+        <th>PORTS</th>
+        <th>REPERTOIRE</th>
+        <th></th>
       </tr></thead>
-      <tbody id="proc-body"><tr><td colspan="8" class="empty">Chargement...</td></tr></tbody>
+      <tbody id="proc-body"><tr><td colspan="9" class="empty">Chargement...</td></tr></tbody>
     </table>
   </div>
 </div>
 
 <hr class="divider">
 
-<div>
+<!-- Docker -->
+<div id="docker-section">
   <div class="section-header">
-    Ports en écoute (Node)
-    <span id="port-count">—</span>
+    Conteneurs Docker
+    <span id="docker-count"></span>
   </div>
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>PORT</th><th>PID</th><th>PROJET</th><th>ÉTAT</th><th>PROTO</th>
+        <th>ID</th><th>NOM</th><th>IMAGE</th><th>STATUS</th><th>PORTS</th><th></th>
+      </tr></thead>
+      <tbody id="docker-body"><tr><td colspan="6" class="empty">Chargement...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- Ports -->
+<div>
+  <div class="section-header">
+    Ports en ecoute
+    <span id="port-count"></span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>PORT</th><th>PID</th><th>TYPE</th><th>PROJET</th><th>PROTO</th>
       </tr></thead>
       <tbody id="port-body"><tr><td colspan="5" class="empty">Chargement...</td></tr></tbody>
     </table>
   </div>
 </div>
 
-<hr class="divider">
-
-<div>
-  <div class="section-header">
-    Conteneurs Docker
-    <span id="docker-count">—</span>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr>
-        <th>ID</th><th>PROJET</th><th>SANTÉ</th><th></th>
-      </tr></thead>
-      <tbody id="docker-body"><tr><td colspan="4" class="empty">Chargement...</td></tr></tbody>
-    </table>
-  </div>
-</div>
-
 <div class="status-bar">
-  <div class="status-item">CPU total : <span class="val" id="total-cpu">—</span></div>
-  <div class="status-item">Mémoire : <span class="warn" id="total-mem">—</span></div>
-  <div class="status-item">Processus : <span class="info" id="total-procs">—</span></div>
+  <div class="status-item">CPU total : <span class="val" id="total-cpu"></span></div>
+  <div class="status-item">Memoire : <span class="warn" id="total-mem"></span></div>
+  <div class="status-item">Processus : <span class="info" id="total-procs"></span></div>
+  <div class="status-item">Docker : <span class="info" id="total-docker"></span></div>
   <div class="spacer"></div>
-  <div class="status-item" id="last-scan">—</div>
+  <div class="status-item" id="last-scan"></div>
 </div>
 
-<!-- Kill/Action modal -->
+<!-- Modal -->
 <div class="modal-backdrop" id="kill-modal">
   <div class="kill-dialog">
     <p id="modal-title">Tuer le processus ?</p>
     <span class="kill-pid-big" id="kill-pid-display"></span>
     <span class="kill-proj-big" id="kill-proj-display"></span>
-    <p style="font-size:11px;" id="modal-detail">SIGTERM → SIGKILL si résistant</p>
+    <p style="font-size:11px;" id="modal-detail">SIGTERM</p>
     <div class="kill-btns">
-      <button class="btn-confirm" onclick="confirmAction()">⚡ Confirmer</button>
+      <button class="btn-confirm" onclick="confirmAction()">Confirmer</button>
       <button class="btn-cancel" onclick="closeModal()">Annuler</button>
     </div>
   </div>
 </div>
 
 <script>
-let data = [];
+let procData = [];
 let dockerData = [];
-let killTarget = null;
 let actionTarget = null;
 let watchInterval = null;
 let watchActive = true;
 
-function apiBase() {
-  return document.getElementById('endpoint').value.trim().replace(/\/$/, '');
+// ── Type filters ──
+const activeTypes = { node: true, python: true, docker: true };
+
+function toggleTypeFilter(type) {
+  activeTypes[type] = !activeTypes[type];
+  document.querySelector(`.filter-type[data-type="${type}"]`).classList.toggle('active', activeTypes[type]);
+  renderAll();
 }
+
+// ── Sort state ──
+let procSort = { key: 'cpu', dir: 'desc' };
+
+function sortProcs(key) {
+  if (procSort.key === key) {
+    procSort.dir = procSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    procSort.key = key;
+    procSort.dir = key === 'project' ? 'asc' : 'desc';
+  }
+  document.querySelectorAll('#proc-table th.sortable').forEach(th => th.classList.remove('asc', 'desc'));
+  event.target.closest('th').classList.add(procSort.dir);
+  renderAll();
+}
+
+// ── Sparkline history ──
+const cpuHistory = {};
+const memHistory = {};
+const HISTORY_LEN = 20;
+
+function updateHistory(procs) {
+  const seenPids = new Set();
+  procs.forEach(r => {
+    seenPids.add(r.pid);
+    if (!cpuHistory[r.pid]) cpuHistory[r.pid] = [];
+    if (!memHistory[r.pid]) memHistory[r.pid] = [];
+    cpuHistory[r.pid].push(r.cpu);
+    memHistory[r.pid].push(r.mem);
+    if (cpuHistory[r.pid].length > HISTORY_LEN) cpuHistory[r.pid].shift();
+    if (memHistory[r.pid].length > HISTORY_LEN) memHistory[r.pid].shift();
+  });
+  Object.keys(cpuHistory).forEach(pid => {
+    if (!seenPids.has(Number(pid))) { delete cpuHistory[pid]; delete memHistory[pid]; }
+  });
+}
+
+function sparkline(values, color) {
+  if (values.length < 2) return '';
+  const w = 50, h = 16;
+  const max = Math.max(...values, 0.1);
+  const step = w / (values.length - 1);
+  const points = values.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * h).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" style="vertical-align:middle;margin-left:6px;"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+
+// ── Notifications ──
+let prevPids = new Set();
+let prevDockerIds = new Set();
+let prevDockerHealth = {};
+
+function requestNotifPermission() {
+  if (!('Notification' in window)) { showError('Notifications non supportees'); return; }
+  Notification.requestPermission().then(perm => {
+    document.getElementById('notif-btn').classList.toggle('active', perm === 'granted');
+  });
+}
+
+function checkNotifications(newProcs, newDocker) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+  const newPids = new Set(newProcs.map(r => r.pid));
+  if (prevPids.size > 0) {
+    prevPids.forEach(pid => {
+      if (!newPids.has(pid)) {
+        new Notification('dev-watch', { body: `Process PID ${pid} terminated` });
+      }
+    });
+  }
+  prevPids = newPids;
+
+  const newDockerIds = new Set(newDocker.map(r => r.id));
+  if (prevDockerIds.size > 0) {
+    prevDockerIds.forEach(id => {
+      if (!newDockerIds.has(id)) {
+        new Notification('dev-watch', { body: `Container ${id.substring(0,12)} stopped` });
+      }
+    });
+  }
+
+  newDocker.forEach(r => {
+    if (r.health === 'unhealthy' && prevDockerHealth[r.id] !== 'unhealthy') {
+      new Notification('dev-watch', { body: `Container ${r.name} is unhealthy` });
+    }
+  });
+
+  prevDockerIds = newDockerIds;
+  prevDockerHealth = {};
+  newDocker.forEach(r => { prevDockerHealth[r.id] = r.health; });
+}
+
+// ── Core ──
+function apiBase() { return document.getElementById('endpoint').value.trim().replace(/\/$/, ''); }
 
 function setStatus(msg, cls) {
   const el = document.getElementById('ep-status');
@@ -382,50 +526,10 @@ function setStatus(msg, cls) {
 
 function showError(msg) {
   const el = document.getElementById('error-banner');
-  el.textContent = '⚠ ' + msg;
+  el.textContent = msg;
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 5000);
 }
-
-async function fetchData() {
-  try {
-    setStatus('⟳ fetch...', 'idle');
-    const res = await fetch(apiBase() + '/api/ps', { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    data = await res.json();
-    setStatus('✓ connecté', 'ok');
-    renderAll();
-  } catch(e) {
-    setStatus('✗ ' + e.message, 'err');
-    showError('Impossible de joindre le serveur — lance python3 server.py');
-  }
-}
-
-async function fetchDocker() {
-  try {
-    const res = await fetch(apiBase() + '/api/docker', { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return;
-    dockerData = await res.json();
-    renderDocker(dockerData);
-  } catch(e) {
-    // silently ignore docker errors
-  }
-}
-
-function getFilter() { return document.getElementById('filter').value.toLowerCase().trim(); }
-
-function matchRow(r, f) {
-  if (!f) return true;
-  return String(r.pid).includes(f) ||
-    r.project.toLowerCase().includes(f) ||
-    r.cmd.toLowerCase().includes(f) ||
-    r.dir.toLowerCase().includes(f) ||
-    r.ports.some(p => String(p).includes(f));
-}
-
-function cpuClass(v) { return v > 15 ? 'cpu burn' : v > 8 ? 'cpu hot' : 'cpu'; }
-
-function ts() { return new Date().toTimeString().slice(0, 8); }
 
 function esc(s) {
   const d = document.createElement('div');
@@ -433,104 +537,222 @@ function esc(s) {
   return d.innerHTML;
 }
 
+async function fetchData() {
+  try {
+    setStatus('fetch...', 'idle');
+    const [psRes, dockerRes] = await Promise.all([
+      fetch(apiBase() + '/api/ps', { signal: AbortSignal.timeout(5000) }),
+      fetch(apiBase() + '/api/docker', { signal: AbortSignal.timeout(5000) }).catch(() => null)
+    ]);
+    if (!psRes.ok) throw new Error('HTTP ' + psRes.status);
+    procData = await psRes.json();
+    dockerData = dockerRes && dockerRes.ok ? await dockerRes.json() : [];
+    updateHistory(procData);
+    checkNotifications(procData, dockerData);
+    setStatus('connecte', 'ok');
+    renderAll();
+  } catch(e) {
+    setStatus(e.message, 'err');
+    showError('Impossible de joindre le serveur');
+  }
+}
+
+function getFilter() { return document.getElementById('filter').value.toLowerCase().trim(); }
+
+function matchProc(r, f) {
+  if (!activeTypes[r.type]) return false;
+  if (!f) return true;
+  return String(r.pid).includes(f) ||
+    r.type.includes(f) ||
+    r.project.toLowerCase().includes(f) ||
+    r.cmd.toLowerCase().includes(f) ||
+    r.dir.toLowerCase().includes(f) ||
+    r.ports.some(p => String(p).includes(f));
+}
+
+function matchDocker(r, f) {
+  if (!f) return true;
+  return r.id.toLowerCase().includes(f) ||
+    r.name.toLowerCase().includes(f) ||
+    r.image.toLowerCase().includes(f) ||
+    r.status.toLowerCase().includes(f) ||
+    r.ports.some(p => String(p).includes(f));
+}
+
+function cpuClass(v) { return v > 15 ? 'cpu burn' : v > 8 ? 'cpu hot' : 'cpu'; }
+function ts() { return new Date().toTimeString().slice(0, 8); }
+
 function renderAll() {
   const f = getFilter();
-  const filtered = data.filter(r => matchRow(r, f));
-  renderProcs(filtered);
-  renderPorts(filtered);
+  const filteredProcs = procData.filter(r => matchProc(r, f));
+  const filteredDocker = dockerData.filter(r => matchDocker(r, f));
+  renderProcs(filteredProcs);
+  renderDocker(filteredDocker);
+  renderPorts(filteredProcs);
 
-  const totalCpu = data.reduce((a,r) => a + r.cpu, 0).toFixed(1);
-  const totalMem = data.reduce((a,r) => a + r.mem, 0).toFixed(0);
+  // docker section visibility
+  document.getElementById('docker-section').style.display = activeTypes.docker ? '' : 'none';
+
+  const totalCpu = procData.reduce((a,r) => a + r.cpu, 0).toFixed(1);
+  const totalMem = procData.reduce((a,r) => a + r.mem, 0).toFixed(0);
   document.getElementById('total-cpu').textContent = totalCpu + '%';
   document.getElementById('total-mem').textContent = totalMem + ' MB';
-  document.getElementById('total-procs').textContent = data.length;
-  document.getElementById('last-scan').textContent = 'Dernière analyse : ' + ts();
-}
-
-function healthColor(h) {
-  if (h === 'healthy') return 'var(--green)';
-  if (h === 'unhealthy') return 'var(--red)';
-  if (h === 'starting') return 'var(--amber)';
-  return 'var(--text-dim)';
-}
-
-function containerRow(r, i) {
-  return `
-    <tr style="animation-delay:${i * 35}ms">
-      <td class="pid">${esc(r.id)}</td>
-      <td class="project">${esc(r.project)}</td>
-      <td style="color:${healthColor(r.health)};font-size:11px;">${esc(r.health)}</td>
-      <td>
-        <button class="restart-btn" onclick="askDockerRestart('${esc(r.id)}','${esc(r.name || r.project).replace(/'/g,"\\'")}')">restart</button>
-        <button class="stop-btn" onclick="askDockerStop('${esc(r.id)}','${esc(r.name || r.project).replace(/'/g,"\\'")}')">stop</button>
-      </td>
-    </tr>
-  `;
-}
-
-function renderDocker(rows) {
-  document.getElementById('docker-count').textContent = rows.length + ' conteneur(s)';
-  const tbody = document.getElementById('docker-body');
-  if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">Aucun conteneur Docker en cours</td></tr>';
-    return;
-  }
-  tbody.innerHTML = rows.map((r, i) => containerRow(r, i)).join('');
+  document.getElementById('total-procs').textContent = procData.length;
+  document.getElementById('total-docker').textContent = dockerData.length;
+  document.getElementById('last-scan').textContent = 'Derniere analyse : ' + ts();
 }
 
 function renderProcs(rows) {
-  document.getElementById('proc-count').textContent = rows.length + ' trouvé(s)';
+  document.getElementById('proc-count').textContent = rows.length + ' trouve(s)';
   const tbody = document.getElementById('proc-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">Aucun processus Node/npm détecté</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">Aucun processus detecte</td></tr>';
     return;
   }
+
+  // sort
+  rows.sort((a, b) => {
+    let va = a[procSort.key], vb = b[procSort.key];
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+    if (va < vb) return procSort.dir === 'asc' ? -1 : 1;
+    if (va > vb) return procSort.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
   tbody.innerHTML = rows.map((r, i) => `
     <tr style="animation-delay:${i * 35}ms">
+      <td><span class="type-tag ${r.type}">${r.type}</span></td>
       <td class="pid">${r.pid}</td>
       <td class="project">${esc(r.project)}</td>
       <td class="cmd" title="${esc(r.cmd)}">${esc(r.cmd)}</td>
-      <td class="${cpuClass(r.cpu)}">${r.cpu.toFixed(1)}%</td>
-      <td>${r.mem} MB</td>
-      <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">—</span>'}</td>
+      <td class="${cpuClass(r.cpu)}">${r.cpu.toFixed(1)}%${sparkline(cpuHistory[r.pid] || [], r.cpu > 15 ? '#f87171' : r.cpu > 8 ? '#fbbf24' : '#4ade80')}</td>
+      <td>${r.mem} MB${sparkline(memHistory[r.pid] || [], '#38bdf8')}</td>
+      <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">&mdash;</span>'}</td>
       <td class="dir" title="${esc(r.dir)}">${esc(r.dir)}</td>
       <td><button class="kill-btn" onclick="askKill(${r.pid},'${esc(r.project).replace(/'/g,"\\'")}')">kill</button></td>
     </tr>
   `).join('');
 }
 
+// ── Docker accordion ──
+const accordionState = {};
+
+function getProjectHealth(containers) {
+  const hasDown = containers.some(r => !r.status.toLowerCase().startsWith('up'));
+  const hasUnhealthy = containers.some(r => r.health === 'unhealthy');
+  if (hasDown) return 'red';
+  if (hasUnhealthy) return 'orange';
+  return 'green';
+}
+
+function toggleAccordion(proj) {
+  accordionState[proj] = !accordionState[proj];
+  const header = document.querySelector(`[data-project="${CSS.escape(proj)}"]`);
+  const rows = document.querySelectorAll(`[data-group="${CSS.escape(proj)}"]`);
+  if (accordionState[proj]) {
+    header.classList.add('collapsed');
+    rows.forEach(r => r.style.display = 'none');
+  } else {
+    header.classList.remove('collapsed');
+    rows.forEach(r => r.style.display = '');
+  }
+}
+
+function renderDocker(rows) {
+  document.getElementById('docker-count').textContent = rows.length + ' conteneur(s)';
+  const tbody = document.getElementById('docker-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Aucun conteneur Docker en cours</td></tr>';
+    return;
+  }
+
+  const groups = {};
+  const noProject = [];
+  rows.forEach(r => {
+    if (r.project) {
+      if (!groups[r.project]) groups[r.project] = [];
+      groups[r.project].push(r);
+    } else {
+      noProject.push(r);
+    }
+  });
+
+  let html = '';
+  let idx = 0;
+
+  function containerRow(r, group) {
+    const collapsed = group && accordionState[group];
+    const row = `
+      <tr style="animation-delay:${idx * 35}ms;${collapsed ? 'display:none;' : ''}" ${group ? `data-group="${esc(group)}"` : ''}>
+        <td style="color:var(--text-dim);font-size:11px;">${esc(r.id.substring(0,12))}</td>
+        <td class="project">${esc(r.name)}</td>
+        <td style="color:var(--purple);font-size:11px;">${esc(r.image)}</td>
+        <td><span class="docker-status ${r.status.toLowerCase().startsWith('up') ? 'up' : 'other'}">${esc(r.status)}</span></td>
+        <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">&mdash;</span>'}</td>
+        <td>
+          <button class="restart-btn" onclick="askDockerRestart('${esc(r.id)}','${esc(r.name).replace(/'/g,"\\'")}')">restart</button>
+          <button class="stop-btn" onclick="askDockerStop('${esc(r.id)}','${esc(r.name).replace(/'/g,"\\'")}')">stop</button>
+        </td>
+      </tr>`;
+    idx++;
+    return row;
+  }
+
+  Object.keys(groups).sort().forEach(proj => {
+    const health = getProjectHealth(groups[proj]);
+    const collapsed = accordionState[proj];
+    html += `
+      <tr>
+        <td colspan="6" style="padding:0;border:0;">
+          <div class="project-header ${collapsed ? 'collapsed' : ''}" data-project="${esc(proj)}" onclick="toggleAccordion('${esc(proj).replace(/'/g,"\\'")}')">
+            <span class="chevron">&#9660;</span>
+            <span class="health-dot ${health}"></span>
+            ${esc(proj)}
+            <span class="container-count">${groups[proj].length} conteneur(s)</span>
+          </div>
+        </td>
+      </tr>`;
+    idx++;
+    groups[proj].forEach(r => { html += containerRow(r, proj); });
+  });
+
+  noProject.forEach(r => { html += containerRow(r, null); });
+  tbody.innerHTML = html;
+}
+
 function renderPorts(rows) {
   const portRows = [];
-  rows.forEach(r => r.ports.forEach(p => portRows.push({ port: p, pid: r.pid, project: r.project })));
+  rows.forEach(r => r.ports.forEach(p => portRows.push({ port: p, pid: r.pid, type: r.type, project: r.project })));
   document.getElementById('port-count').textContent = portRows.length + ' port(s)';
   const tbody = document.getElementById('port-body');
   if (!portRows.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Aucun port Node en écoute</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Aucun port en ecoute</td></tr>';
     return;
   }
   tbody.innerHTML = portRows.map((r, i) => `
     <tr style="animation-delay:${i * 35}ms">
       <td><span class="port-tag">:${r.port}</span></td>
       <td class="pid">${r.pid}</td>
+      <td><span class="type-tag ${r.type}">${r.type}</span></td>
       <td class="project">${esc(r.project)}</td>
-      <td style="color:var(--green);font-size:11px;">LISTEN</td>
       <td style="color:var(--text-dim);font-size:11px;">TCP</td>
     </tr>
   `).join('');
 }
 
+// ── Actions ──
 function askKill(pid, project) {
   actionTarget = { kind: 'kill', pid, project };
   document.getElementById('modal-title').textContent = 'Tuer le processus ?';
   document.getElementById('kill-pid-display').textContent = pid;
   document.getElementById('kill-proj-display').textContent = project;
-  document.getElementById('modal-detail').textContent = 'SIGTERM → SIGKILL si résistant';
+  document.getElementById('modal-detail').textContent = 'SIGTERM';
   document.getElementById('kill-modal').classList.add('show');
 }
 
 function askDockerStop(id, name) {
   actionTarget = { kind: 'docker-stop', id, name };
-  document.getElementById('modal-title').textContent = 'Arrêter le conteneur ?';
+  document.getElementById('modal-title').textContent = 'Stopper le conteneur ?';
   document.getElementById('kill-pid-display').textContent = id.substring(0, 12);
   document.getElementById('kill-proj-display').textContent = name;
   document.getElementById('modal-detail').textContent = 'docker stop';
@@ -539,22 +761,18 @@ function askDockerStop(id, name) {
 
 function askDockerRestart(id, name) {
   actionTarget = { kind: 'docker-restart', id, name };
-  document.getElementById('modal-title').textContent = 'Redémarrer le conteneur ?';
+  document.getElementById('modal-title').textContent = 'Redemarrer le conteneur ?';
   document.getElementById('kill-pid-display').textContent = id.substring(0, 12);
   document.getElementById('kill-proj-display').textContent = name;
   document.getElementById('modal-detail').textContent = 'docker restart';
   document.getElementById('kill-modal').classList.add('show');
 }
 
-function closeModal() {
-  document.getElementById('kill-modal').classList.remove('show');
-  killTarget = null;
-  actionTarget = null;
-}
+function closeModal() { document.getElementById('kill-modal').classList.remove('show'); actionTarget = null; }
 
 async function confirmAction() {
+  if (!actionTarget) return;
   const target = actionTarget;
-  if (!target) return;
   closeModal();
   try {
     let res;
@@ -578,23 +796,23 @@ async function confirmAction() {
       });
     }
     const json = await res.json();
-    if (!res.ok) { showError(json.error || 'Action échouée'); return; }
+    if (!res.ok) { showError(json.error || 'Action echouee'); return; }
     await fetchData();
-    await fetchDocker();
   } catch(e) {
     showError('Action impossible : ' + e.message);
   }
 }
 
+// ── Watch ──
 function toggleWatch() {
   watchActive = !watchActive;
   const btn = document.getElementById('watch-btn');
   if (watchActive) {
-    btn.textContent = '⏸ Watch 3s';
+    btn.textContent = 'Watch 5s';
     btn.classList.add('active');
     startWatch();
   } else {
-    btn.textContent = '▶ Watch off';
+    btn.textContent = 'Watch off';
     btn.classList.remove('active');
     clearInterval(watchInterval);
   }
@@ -602,13 +820,15 @@ function toggleWatch() {
 
 function startWatch() {
   clearInterval(watchInterval);
-  watchInterval = setInterval(() => { fetchData(); fetchDocker(); }, 3000);
+  watchInterval = setInterval(fetchData, 5000);
 }
 
-// Init
+// ── Init ──
 fetchData();
-fetchDocker();
 startWatch();
+if ('Notification' in window && Notification.permission === 'granted') {
+  document.getElementById('notif-btn').classList.add('active');
+}
 </script>
 </body>
 </html>
