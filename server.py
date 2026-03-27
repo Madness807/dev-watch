@@ -19,9 +19,13 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:*", "http://127.0.0.1:*", "null"])
+CORS(app, origins=["http://localhost:*", "http://127.0.0.1:*"])
 
 PORT = 3999
+
+# allowlists — only PIDs/containers seen by the last scan can be acted on
+known_pids = set()
+known_container_ids = set()
 
 # ── Utilitaires ──────────────────────────────
 
@@ -94,7 +98,8 @@ def get_cpu_mem(pid):
                 mem_kb = 0
         hz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
         cpu_ticks = utime + stime
-        uptime_s = float(open("/proc/uptime").read().split()[0])
+        with open("/proc/uptime") as f:
+            uptime_s = float(f.read().split()[0])
         proc_start = int(parts[21]) / hz
         elapsed = uptime_s - proc_start
         cpu_pct = round((cpu_ticks / hz / elapsed) * 100, 1) if elapsed > 0 else 0.0
@@ -166,6 +171,8 @@ def api_ps():
         })
 
     processes.sort(key=lambda x: x["cpu"], reverse=True)
+    known_pids.clear()
+    known_pids.update(p["pid"] for p in processes)
     return jsonify(processes)
 
 
@@ -222,6 +229,8 @@ def api_docker():
             "health": health_map.get(cid[:12], "none"),
         })
 
+    known_container_ids.clear()
+    known_container_ids.update(c["id"] for c in containers)
     return jsonify(containers)
 
 
@@ -235,6 +244,8 @@ def api_docker_stop():
         return jsonify({"error": "ID conteneur invalide"}), 400
     if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
         return jsonify({"error": "ID conteneur invalide"}), 400
+    if container_id not in known_container_ids:
+        return jsonify({"error": "Conteneur non reconnu — rafraichir le dashboard"}), 403
 
     result = run_cmd(["docker", "stop", container_id])
     if result.strip():
@@ -253,6 +264,8 @@ def api_docker_restart():
         return jsonify({"error": "ID conteneur invalide"}), 400
     if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
         return jsonify({"error": "ID conteneur invalide"}), 400
+    if container_id not in known_container_ids:
+        return jsonify({"error": "Conteneur non reconnu — rafraichir le dashboard"}), 403
 
     result = run_cmd(["docker", "restart", container_id])
     if result.strip():
@@ -271,6 +284,8 @@ def api_kill():
         return jsonify({"error": "PID invalide"}), 400
     if pid <= 1 or pid == os.getpid():
         return jsonify({"error": "PID protege"}), 403
+    if pid not in known_pids:
+        return jsonify({"error": "PID non reconnu — rafraichir le dashboard"}), 403
 
     try:
         os.kill(pid, signal.SIGTERM)
@@ -289,6 +304,9 @@ def health():
 # ── Main ─────────────────────────────────────
 
 if __name__ == "__main__":
+    import logging
+    logging.getLogger("werkzeug").setLevel(logging.ERROR)
+
     print(f"\n  dev-watch server sur http://localhost:{PORT}")
     print(f"  API : GET  /api/ps       (Node + Python)")
     print(f"        GET  /api/docker   (conteneurs)")
