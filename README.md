@@ -1,6 +1,6 @@
 # dev-watch
 
-Dashboard web local pour surveiller et gerer les processus (Node.js, Python, Docker) qui tournent sur ta machine.
+Dashboard web local pour surveiller et gerer les processus, conteneurs Docker, ports et connexions reseau sur ta machine de dev.
 
 > **AVERTISSEMENT : Cet outil est concu UNIQUEMENT pour un usage local.**
 > Il ne doit JAMAIS etre expose sur un reseau, un VPN, un reverse proxy, ou Internet.
@@ -9,94 +9,96 @@ Dashboard web local pour surveiller et gerer les processus (Node.js, Python, Doc
 
 ## Fonctionnalites
 
-- **Vue en temps reel** des processus Node/Python et conteneurs Docker
-- **Rafraichissement automatique** toutes les 5 secondes (+ bouton refresh manuel)
-- **Filtres rapides** par type (Node / Python / Docker) en un clic
-- **Filtre texte** par PID, nom de projet, port ou commande
-- **Colonnes triables** (PID, projet, CPU, memoire, type)
-- **Sparklines CPU/memoire** — mini graphiques d'historique par processus
-- **Docker groupe par projet** compose avec accordeon et pastille de sante (vert/orange/rouge)
-- **Kill / Stop / Restart** directement depuis l'interface
-- **Notifications navigateur** quand un processus meurt ou un conteneur devient unhealthy
-- **Tableau des ports** TCP en ecoute
+### Processus
+- Detection automatique des processus **Node.js** et **Python** (hors containers Docker)
+- Filtres rapides par type (Node / Python)
+- Colonnes triables (type, PID, projet)
+- Bouton kill (SIGTERM)
+
+### Conteneurs Docker
+- Groupes par projet compose avec accordeon
+- Pastille de sante : vert (healthy), orange (unhealthy), rouge (down)
+- Detection automatique de la tech via le nom du container (22 icones)
+- Tag version sur les images : orange (latest), vert (version pinee)
+- Ports bindes (host:container) vs ports internes
+- Boutons restart / stop
+
+### Reseau
+- **Ports en ecoute (TCP)** : scan complet de la machine, pas juste Node/Python
+- **Connexions actives (TCP)** : toutes les connexions ESTABLISHED avec processus et PID
+- Indicateur de bind : vert (127.0.0.1) vs rouge (0.0.0.0)
+
+### Systeme
+- Barres de ressources dans la toolbar : CPU, RAM, disque, GPU (nvidia)
+- Colorees selon l'usage (vert < 60%, jaune < 85%, rouge > 85%)
+
+### Interface
+- Sections en accordeon (ouvertes/fermees au clic)
+- Toasts visuels in-page pour les evenements (processus termine, container unhealthy, etc.)
+- Sons discrets (up/down) via Web Audio API
+- Watch configurable : 3s / 5s / 10s / off
+- Ligne de statut : verte clignotante (live) / rouge (watch off)
+- Filtre texte global (PID, projet, port, type, commande)
+- Bouton Disclaimer avec les regles de securite
+- Zero appel reseau externe (icones locales, pas de CDN, pas de Google Fonts)
 
 ## Securite
 
-Cet outil a ete audite et durci pour un usage local. Voici les mesures en place :
+Un bouton **Disclaimer** est accessible dans la toolbar du dashboard. Il resume les mesures de securite en place.
 
-### Reseau
+### Protections actives
+- **Bind 127.0.0.1** : invisible depuis le reseau
+- **CORS restreint** : localhost uniquement, pas de `null`, pas de `file://`
+- **Allowlist PIDs** : seuls les processus scannes sont killables (403 sinon)
+- **Allowlist containers** : seuls les containers scannes sont actionnables (403 sinon)
+- **Pas de shell=True** : toutes les commandes via subprocess avec liste d'arguments
+- **Echappement HTML** : protection XSS sur toutes les donnees dynamiques
+- **Filtrage Docker** : les processus tournant dans des containers sont exclus de la section Processus
+- **Dashboard servi par Flask** : pas de file://, meme origine
 
-- **Bind `127.0.0.1` uniquement** — le serveur n'ecoute que sur localhost, il est invisible depuis le reseau
-- **CORS restreint** — seules les origines `http://localhost` et `http://127.0.0.1` sont acceptees. Les requetes depuis `file://`, `data:`, ou tout autre site sont rejetees
-- **Dashboard servi par Flask** — le HTML est servi sur `http://localhost:3999/`, pas ouvert en `file://`, ce qui evite les problemes de CORS et les attaques par fichier HTML malicieux
-
-### Actions destructives
-
-- **Allowlist de PIDs** — seuls les processus detectes par le dernier scan `/api/ps` peuvent etre tues. Un PID arbitraire est rejete avec une erreur 403
-- **Allowlist de containers Docker** — seuls les containers detectes par le dernier scan `/api/docker` peuvent etre stoppes ou redemarres. Un ID inconnu est rejete
-- **PID 1 et self protege** — le serveur refuse de se tuer lui-meme ou de toucher au PID 1
-
-### Code
-
-- **Pas de `shell=True`** — toutes les commandes systeme utilisent `subprocess` avec des listes d'arguments, pas d'interpretation shell
-- **Validation regex** sur les IDs de containers Docker avant toute action
-- **Echappement HTML (XSS)** — toutes les donnees dynamiques (nom de projet, commande, repertoire) sont echappees avant injection dans le DOM
-- **Gestion gracieuse de Docker absent** — si Docker n'est pas installe ou si le daemon ne tourne pas, l'API retourne un tableau vide sans erreur
-
-### Ce que cet outil ne fait PAS
-
-- Pas d'authentification (token, mot de passe) — inutile en local sur `127.0.0.1`
-- Pas de chiffrement TLS — inutile en loopback
-- Pas de rate limiting — un DoS local n'a pas de sens (tu te DoS toi-meme)
-- Pas de serveur WSGI production (gunicorn) — c'est un outil de dev, pas un service expose
-
-Ces choix sont **volontaires**. Ajouter ces couches pour un outil local serait de la sur-ingenierie. Si vous avez besoin d'exposer ce dashboard sur un reseau, **ne le faites pas**. Ecrivez un autre outil avec une architecture adaptee.
+### Non protege (par design)
+- Pas d'authentification (inutile sur 127.0.0.1)
+- Pas de TLS (inutile en loopback)
+- Pas de rate limiting (DoS local = tu te DoS toi-meme)
+- Les commandes des processus peuvent contenir des secrets visibles dans le dashboard
 
 ## Architecture
 
 | Fichier | Role |
 |---------|------|
-| `server.py` | Serveur Flask (port 3999) — scanne `/proc`, `ps aux` et Docker CLI, expose une API REST + sert le dashboard |
-| `dev-watch.html` | Interface web — consomme l'API et affiche le dashboard |
-| `dev-watch.service` | Fichier systemd pour lancement automatique au boot (optionnel) |
-| `start.sh` | Script de lancement — demarre le serveur et ouvre le navigateur |
+| `server.py` | Serveur Flask (port 3999) : API REST + sert le dashboard |
+| `dev-watch.html` | Interface web : consomme l'API |
+| `icons/` | 22 icones SVG locales (tech detection) |
+| `start.sh` | Lance le serveur et ouvre le navigateur |
+| `dev-watch.service` | Fichier systemd (optionnel) |
 
 ## API
 
 | Endpoint | Methode | Description |
 |----------|---------|-------------|
-| `/` | GET | Sert le dashboard HTML |
-| `/api/ps` | GET | Liste les processus Node/Python avec CPU, memoire, ports, repertoire, type |
-| `/api/docker` | GET | Liste les conteneurs Docker avec status, health, projet compose, ports |
-| `/api/kill` | POST | Tue un processus par PID (`{"pid": 1234}`) — uniquement les PIDs connus |
-| `/api/docker/stop` | POST | Stoppe un conteneur (`{"id": "abc123"}`) — uniquement les IDs connus |
-| `/api/docker/restart` | POST | Redemarre un conteneur (`{"id": "abc123"}`) — uniquement les IDs connus |
-| `/api/health` | GET | Health check du serveur |
+| `/` | GET | Dashboard HTML |
+| `/api/ps` | GET | Processus Node/Python (hors containers) |
+| `/api/docker` | GET | Conteneurs Docker (status, health, ports, projet compose) |
+| `/api/ports` | GET | Tous les ports TCP en ecoute |
+| `/api/connections` | GET | Connexions TCP actives (ESTABLISHED) |
+| `/api/system` | GET | CPU, RAM, disque, GPU |
+| `/api/docker/disk` | GET | Espace disque Docker |
+| `/api/kill` | POST | Kill processus (`{"pid": 1234}`) — allowlist only |
+| `/api/docker/stop` | POST | Stop container (`{"id": "abc123"}`) — allowlist only |
+| `/api/docker/restart` | POST | Restart container (`{"id": "abc123"}`) — allowlist only |
+| `/api/health` | GET | Health check |
 
 ## Installation
 
 ```bash
-# 1. Installer les dependances Python
 pip install flask flask-cors --break-system-packages
-
-# 2. Lancer
-~/dev-watch/start.sh
-```
-
-Le script demarre le serveur et ouvre `http://localhost:3999` dans le navigateur. `Ctrl+C` pour arreter.
-
-## Demarrage automatique (optionnel)
-
-```bash
-sudo cp dev-watch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now dev-watch
-sudo systemctl status dev-watch
+~/npm-watch/start.sh
 ```
 
 ## Prerequis
 
 - Python 3
 - Flask + flask-cors
-- Linux (utilise `/proc` pour lire les infos processus)
-- Docker (optionnel — le dashboard fonctionne sans)
+- Linux (utilise `/proc` pour les infos processus)
+- Docker (optionnel)
+- nvidia-smi (optionnel, pour le GPU)

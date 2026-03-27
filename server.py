@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 # ─────────────────────────────────────────────
 #  dev-watch — server.py
-#  Dépendances : pip install flask flask-cors
-#  Lancement   : python3 server.py
-#  API         : GET  /api/ps
-#                GET  /api/docker
-#                POST /api/kill       {"pid": 1234}
-#                POST /api/docker/stop    {"id": "abc123"}
-#                POST /api/docker/restart {"id": "abc123"}
+#  Deps    : pip install flask flask-cors
+#  System  : ss (iproute2), docker (optionnel), nvidia-smi (optionnel)
+#  Launch  : python3 server.py
+#  API     : GET  /api/ps             (processus Node + Python)
+#            GET  /api/docker         (conteneurs Docker)
+#            GET  /api/ports          (ports TCP en ecoute)
+#            GET  /api/connections    (connexions TCP actives)
+#            GET  /api/system         (CPU, RAM, disque, GPU)
+#            GET  /api/docker/disk    (espace disque Docker)
+#            POST /api/kill           {"pid": 1234}
+#            POST /api/docker/stop    {"id": "abc123"}
+#            POST /api/docker/restart {"id": "abc123"}
+#            GET  /api/health
 # ─────────────────────────────────────────────
 
 import subprocess
@@ -21,7 +27,15 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:*", "http://127.0.0.1:*"])
 
+PORT = 3999
+MAX_CMD_LEN = 120
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Allowlists: seuls les PIDs/containers vus par le dernier scan peuvent etre actionnables
+known_pids = set()
+known_container_ids = set()
+
+# ── Static routes ────────────────────────────
 
 @app.route("/")
 def serve_dashboard():
@@ -31,23 +45,15 @@ def serve_dashboard():
 def serve_icon(filename):
     return send_from_directory(os.path.join(BASE_DIR, "icons"), filename)
 
-PORT = 3999
-
-# allowlists — only PIDs/containers seen by the last scan can be acted on
-known_pids = set()
-known_container_ids = set()
-
-# ── Utilitaires ──────────────────────────────
+# ── Helpers ──────────────────────────────────
 
 def run_cmd(cmd):
-    """Run a command safely without shell=True. cmd is a list."""
     try:
         return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return ""
 
 def is_in_container(pid):
-    """Verifie si un PID tourne dans un container Docker."""
     try:
         with open(f"/proc/{pid}/cgroup") as f:
             content = f.read()
@@ -56,7 +62,6 @@ def is_in_container(pid):
         return False
 
 def docker_available():
-    """Check if Docker daemon is reachable."""
     try:
         subprocess.check_output(["docker", "info"], stderr=subprocess.DEVNULL, text=True)
         return True
@@ -102,32 +107,7 @@ def get_ports_for_pid(pid):
                 ports.append(int(m.group(1)))
     return list(set(ports))
 
-def get_cpu_mem(pid):
-    try:
-        with open(f"/proc/{pid}/stat") as f:
-            parts = f.read().split()
-        utime = int(parts[13])
-        stime = int(parts[14])
-        with open(f"/proc/{pid}/status") as f:
-            for line in f:
-                if line.startswith("VmRSS:"):
-                    mem_kb = int(line.split()[1])
-                    break
-            else:
-                mem_kb = 0
-        hz = os.sysconf(os.sysconf_names['SC_CLK_TCK'])
-        cpu_ticks = utime + stime
-        with open("/proc/uptime") as f:
-            uptime_s = float(f.read().split()[0])
-        proc_start = int(parts[21]) / hz
-        elapsed = uptime_s - proc_start
-        cpu_pct = round((cpu_ticks / hz / elapsed) * 100, 1) if elapsed > 0 else 0.0
-        return cpu_pct, round(mem_kb / 1024, 1)
-    except Exception:
-        return 0.0, 0.0
-
 def classify_process(cmd_full):
-    """Retourne le type de processus ou None si non pertinent."""
     if re.search(r'(^|\s)(node|npm|npx)(\s|$)|node_modules/\.bin', cmd_full):
         return "node"
     if re.search(r'(^|\s)python[23]?(\s|$)|\.py(\s|$)', cmd_full):
@@ -136,11 +116,24 @@ def classify_process(cmd_full):
         return "python"
     return None
 
-# ── Routes ───────────────────────────────────
+def docker_action(action):
+    data = request.get_json()
+    container_id = data.get("id") if data else None
+    if not container_id or not isinstance(container_id, str):
+        return jsonify({"error": "ID conteneur invalide"}), 400
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
+        return jsonify({"error": "ID conteneur invalide"}), 400
+    if container_id not in known_container_ids:
+        return jsonify({"error": "Conteneur non reconnu"}), 403
+    result = run_cmd(["docker", action, container_id])
+    if result.strip():
+        return jsonify({"ok": True, "id": container_id})
+    return jsonify({"error": f"Impossible: docker {action}"}), 500
+
+# ── API routes ───────────────────────────────
 
 @app.route("/api/ps")
 def api_ps():
-    """Retourne tous les processus Node/npm et Python en cours."""
     out = run_cmd(["ps", "aux"])
     processes = []
     seen_pids = set()
@@ -154,7 +147,7 @@ def api_ps():
         proc_type = classify_process(cmd_full)
         if not proc_type:
             continue
-        if "ps aux" in cmd_full or "grep" in cmd_full:
+        if "ps aux" in cmd_full:
             continue
 
         try:
@@ -173,7 +166,6 @@ def api_ps():
 
         cwd = get_cwd(pid)
         cmdline = get_cmdline(pid) or cmd_full
-        cpu, mem = get_cpu_mem(pid)
         ports = get_ports_for_pid(pid)
         project = get_project_name(cwd, proc_type)
 
@@ -184,14 +176,12 @@ def api_ps():
             "pid": pid,
             "type": proc_type,
             "project": project,
-            "cmd": cmdline[:120],
-            "cpu": cpu,
-            "mem": mem,
+            "cmd": cmdline[:MAX_CMD_LEN],
             "ports": ports,
             "dir": display_cwd,
         })
 
-    processes.sort(key=lambda x: x["cpu"], reverse=True)
+    processes.sort(key=lambda x: x["type"])
     known_pids.clear()
     known_pids.update(p["pid"] for p in processes)
     return jsonify(processes)
@@ -199,7 +189,6 @@ def api_ps():
 
 @app.route("/api/docker")
 def api_docker():
-    """Retourne les conteneurs Docker en cours."""
     if not docker_available():
         return jsonify([])
 
@@ -207,7 +196,6 @@ def api_docker():
     if not out.strip():
         return jsonify([])
 
-    # health + compose project via inspect
     ids_out = run_cmd(["docker", "ps", "-q"])
     container_ids = ids_out.strip().splitlines()
     project_map = {}
@@ -238,12 +226,10 @@ def api_docker():
         ports_raw = c.get("Ports", "")
         bound_ports = []
         internal_ports = []
-        # match host-bound ports (0.0.0.0:8080->8080/tcp)
         bound_container = set()
         for m in re.finditer(r':(\d+)->(\d+)', ports_raw):
             bound_ports.append({"host": int(m.group(1)), "container": int(m.group(2))})
             bound_container.add(m.group(2))
-        # deduplicate (same mapping can appear for ipv4 and ipv6)
         seen = set()
         unique_bound = []
         for p in bound_ports:
@@ -251,7 +237,6 @@ def api_docker():
             if key not in seen:
                 seen.add(key)
                 unique_bound.append(p)
-        # match exposed-only ports (5432/tcp) not already bound
         for m in re.finditer(r'(\d+)/(?:tcp|udp)', ports_raw):
             if m.group(1) not in bound_container:
                 internal_ports.append(int(m.group(1)))
@@ -274,47 +259,15 @@ def api_docker():
 
 @app.route("/api/docker/stop", methods=["POST"])
 def api_docker_stop():
-    """Stoppe un conteneur Docker par ID."""
-    data = request.get_json()
-    container_id = data.get("id") if data else None
-
-    if not container_id or not isinstance(container_id, str):
-        return jsonify({"error": "ID conteneur invalide"}), 400
-    if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
-        return jsonify({"error": "ID conteneur invalide"}), 400
-    if container_id not in known_container_ids:
-        return jsonify({"error": "Conteneur non reconnu — rafraichir le dashboard"}), 403
-
-    result = run_cmd(["docker", "stop", container_id])
-    if result.strip():
-        return jsonify({"ok": True, "id": container_id})
-    else:
-        return jsonify({"error": "Impossible de stopper le conteneur"}), 500
-
+    return docker_action("stop")
 
 @app.route("/api/docker/restart", methods=["POST"])
 def api_docker_restart():
-    """Redemarre un conteneur Docker par ID."""
-    data = request.get_json()
-    container_id = data.get("id") if data else None
-
-    if not container_id or not isinstance(container_id, str):
-        return jsonify({"error": "ID conteneur invalide"}), 400
-    if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
-        return jsonify({"error": "ID conteneur invalide"}), 400
-    if container_id not in known_container_ids:
-        return jsonify({"error": "Conteneur non reconnu — rafraichir le dashboard"}), 403
-
-    result = run_cmd(["docker", "restart", container_id])
-    if result.strip():
-        return jsonify({"ok": True, "id": container_id})
-    else:
-        return jsonify({"error": "Impossible de redemarrer le conteneur"}), 500
+    return docker_action("restart")
 
 
 @app.route("/api/kill", methods=["POST"])
 def api_kill():
-    """Envoie SIGTERM au PID."""
     data = request.get_json()
     pid = data.get("pid") if data else None
 
@@ -323,7 +276,7 @@ def api_kill():
     if pid <= 1 or pid == os.getpid():
         return jsonify({"error": "PID protege"}), 403
     if pid not in known_pids:
-        return jsonify({"error": "PID non reconnu — rafraichir le dashboard"}), 403
+        return jsonify({"error": "PID non reconnu"}), 403
 
     try:
         os.kill(pid, signal.SIGTERM)
@@ -336,12 +289,10 @@ def api_kill():
 
 @app.route("/api/ports")
 def api_ports():
-    """Liste tous les ports TCP en ecoute sur la machine."""
     out = run_cmd(["ss", "-tlnp"])
     ports = []
     seen = set()
     for line in out.splitlines()[1:]:
-        # parse address:port
         m = re.search(r'(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|\[::1\]|\*):(\d+)', line)
         if not m:
             continue
@@ -350,7 +301,6 @@ def api_ports():
             continue
         seen.add(port)
 
-        # parse process info
         pid_match = re.search(r'pid=(\d+)', line)
         pid = int(pid_match.group(1)) if pid_match else None
         process_name = ""
@@ -358,13 +308,9 @@ def api_ports():
         if pid:
             name_match = re.search(r'\("([^"]+)"', line)
             process_name = name_match.group(1) if name_match else ""
-            cmd = get_cmdline(pid)[:80]
+            cmd = get_cmdline(pid)[:MAX_CMD_LEN]
 
-        # determine bind type
-        if '0.0.0.0' in line or '[::]' in line or '*' in line:
-            bind = "all"
-        else:
-            bind = "local"
+        bind = "all" if ('0.0.0.0' in line or '[::]' in line or '*' in line) else "local"
 
         ports.append({
             "port": port,
@@ -380,29 +326,23 @@ def api_ports():
 
 @app.route("/api/system")
 def api_system():
-    """Ressources systeme : CPU, RAM, disque, GPU."""
     result = {}
 
-    # CPU usage (average over all cores)
     try:
         with open("/proc/stat") as f:
-            lines = f.readlines()
-        cpu = lines[0].split()
+            cpu = f.readline().split()
         idle = int(cpu[4])
         total = sum(int(x) for x in cpu[1:])
-        # store for delta calculation
         if not hasattr(api_system, '_prev'):
             api_system._prev = (total, idle)
         prev_total, prev_idle = api_system._prev
         dt = total - prev_total
         di = idle - prev_idle
-        cpu_pct = round((1 - di / dt) * 100, 1) if dt > 0 else 0.0
+        result["cpu"] = round((1 - di / dt) * 100, 1) if dt > 0 else 0.0
         api_system._prev = (total, idle)
-        result["cpu"] = cpu_pct
     except Exception:
         result["cpu"] = 0.0
 
-    # RAM
     try:
         with open("/proc/meminfo") as f:
             mem = {}
@@ -416,7 +356,6 @@ def api_system():
     except Exception:
         result["ram"] = {"used": 0, "total": 0, "pct": 0}
 
-    # Disk (root partition)
     try:
         st = os.statvfs("/")
         total_gb = (st.f_blocks * st.f_frsize) / (1024**3)
@@ -426,15 +365,11 @@ def api_system():
     except Exception:
         result["disk"] = {"used": 0, "total": 0, "pct": 0}
 
-    # GPU (nvidia-smi if available)
     gpu_out = run_cmd(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"])
     if gpu_out.strip():
         try:
             parts = gpu_out.strip().split(",")
-            gpu_pct = float(parts[0].strip())
-            vram_used = float(parts[1].strip())
-            vram_total = float(parts[2].strip())
-            result["gpu"] = {"pct": round(gpu_pct, 1), "vram_used": round(vram_used), "vram_total": round(vram_total)}
+            result["gpu"] = {"pct": round(float(parts[0].strip()), 1), "vram_used": round(float(parts[1].strip())), "vram_total": round(float(parts[2].strip()))}
         except Exception:
             result["gpu"] = None
     else:
@@ -445,7 +380,6 @@ def api_system():
 
 @app.route("/api/connections")
 def api_connections():
-    """Connexions TCP actives (ESTABLISHED)."""
     out = run_cmd(["ss", "-tnp"])
     connections = []
     for line in out.splitlines()[1:]:
@@ -455,9 +389,6 @@ def api_connections():
         if len(parts) < 5:
             continue
 
-        local = parts[3]
-        remote = parts[4]
-
         pid_match = re.search(r'pid=(\d+)', line)
         pid = int(pid_match.group(1)) if pid_match else None
         process_name = ""
@@ -466,8 +397,8 @@ def api_connections():
             process_name = name_match.group(1) if name_match else ""
 
         connections.append({
-            "local": local,
-            "remote": remote,
+            "local": parts[3],
+            "remote": parts[4],
             "pid": pid,
             "process": process_name,
         })
@@ -478,28 +409,18 @@ def api_connections():
 
 @app.route("/api/docker/disk")
 def api_docker_disk():
-    """Resume espace disque Docker."""
     if not docker_available():
-        return jsonify({})
-
+        return jsonify([])
     out = run_cmd(["docker", "system", "df", "--format", "{{json .}}"])
     if not out.strip():
-        return jsonify({})
-
+        return jsonify([])
     result = []
     for line in out.strip().splitlines():
         try:
             d = json.loads(line)
-            result.append({
-                "type": d.get("Type", ""),
-                "total": d.get("TotalCount", 0),
-                "active": d.get("Active", 0),
-                "size": d.get("Size", ""),
-                "reclaimable": d.get("Reclaimable", ""),
-            })
+            result.append({"type": d.get("Type", ""), "total": d.get("TotalCount", 0), "active": d.get("Active", 0), "size": d.get("Size", ""), "reclaimable": d.get("Reclaimable", "")})
         except json.JSONDecodeError:
             continue
-
     return jsonify(result)
 
 
@@ -514,11 +435,6 @@ if __name__ == "__main__":
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
-    print(f"\n  dev-watch server sur http://localhost:{PORT}")
-    print(f"  API : GET  /api/ps       (Node + Python)")
-    print(f"        GET  /api/docker   (conteneurs)")
-    print(f"        POST /api/kill     {{\"pid\": 1234}}")
-    print(f"        POST /api/docker/stop    {{\"id\": \"abc\"}}")
-    print(f"        POST /api/docker/restart {{\"id\": \"abc\"}}")
+    print(f"\n  dev-watch sur http://localhost:{PORT}")
     print(f"  Ctrl+C pour arreter\n")
     app.run(host="127.0.0.1", port=PORT, debug=False)

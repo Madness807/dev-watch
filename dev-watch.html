@@ -191,9 +191,6 @@
   .cmd     { color: var(--text-dim); font-size: 13px; max-width: 350px; overflow: hidden; text-overflow: ellipsis; }
   .dir     { color: var(--text-dim); font-size: 13px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
 
-  .cpu           { color: var(--text); }
-  .cpu.hot       { color: var(--amber); }
-  .cpu.burn      { color: var(--red); }
 
   .type-tag {
     display: inline-flex;
@@ -325,29 +322,10 @@
   }
   .project-row:hover { background: rgba(96,165,250,.08); }
 
-  /* legacy project-header kept for compatibility */
-  .project-header {
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--blue);
-    background: rgba(96,165,250,.04);
-    border-bottom: 1px solid var(--border);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    user-select: none;
-    transition: background .15s;
-  }
-  .project-header:hover { background: rgba(96,165,250,.08); }
-  .project-header .chevron { font-size: 10px; transition: transform .2s; color: var(--text-dim); }
-  .project-header.collapsed .chevron { transform: rotate(-90deg); }
   .health-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .health-dot.green  { background: var(--green); box-shadow: 0 0 4px rgba(74,222,128,.4); }
   .health-dot.red    { background: var(--red); box-shadow: 0 0 4px rgba(248,113,113,.4); }
   .health-dot.orange { background: var(--amber); box-shadow: 0 0 4px rgba(251,191,36,.4); }
-  .project-header .container-count { font-size: 10px; color: var(--text-dim); font-weight: 400; margin-left: auto; }
 
   /* ── Modal ── */
   .modal-backdrop {
@@ -378,7 +356,6 @@
   .btn-cancel  { background: transparent; border-color: var(--border) !important; color: var(--text-dim); }
 
   .empty { padding: 24px; text-align: center; color: var(--text-dim); font-size: 12px; }
-  .divider { display: none; }
 
   .section-card {
     background: var(--surface);
@@ -422,6 +399,43 @@
   @keyframes toastIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
   @keyframes toastOut { from { opacity:1; } to { opacity:0; transform:translateX(20px); } }
 
+  /* ── Disclaimer modal ── */
+  .disclaimer-content {
+    background: var(--surface);
+    border: 1px solid rgba(251,191,36,.3);
+    border-radius: 10px;
+    padding: 28px 32px;
+    max-width: 600px;
+    width: 90%;
+    font-family: var(--mono);
+    max-height: 80vh;
+    overflow-y: auto;
+    color: var(--text);
+  }
+  .disclaimer-content h2 { color: var(--amber); font-size: 16px; margin-bottom: 16px; }
+  .disclaimer-content h3 { color: var(--cyan); font-size: 13px; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .05em; }
+  .disclaimer-content p, .disclaimer-content li { font-size: 12px; line-height: 1.6; color: var(--text-dim); margin-bottom: 6px; }
+  .disclaimer-content ul { padding-left: 18px; }
+  .disclaimer-content .warn-box {
+    background: rgba(248,113,113,.08);
+    border: 1px solid rgba(248,113,113,.2);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 12px 0;
+    color: var(--red);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .disclaimer-content .ok-box {
+    background: rgba(74,222,128,.06);
+    border: 1px solid rgba(74,222,128,.2);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 12px 0;
+    color: var(--green);
+    font-size: 12px;
+  }
+
   .error-banner {
     background: rgba(248,113,113,.08);
     border-bottom: 1px solid rgba(248,113,113,.2);
@@ -455,6 +469,7 @@
   <button class="btn" onclick="fetchData()">Refresh</button>
   <button class="btn active" id="watch-btn" onclick="cycleWatch()">Watch 10s</button>
   <span class="ep-status idle" id="ep-status">en attente</span>
+  <button class="btn" onclick="document.getElementById('disclaimer-modal').classList.add('show')" style="margin-left:4px;font-size:10px;padding:3px 8px;color:var(--amber);border-color:rgba(251,191,36,.3);">Disclaimer</button>
   <div class="sys-meters" id="sys-meters">
     <div class="sys-meter"><span class="meter-label">CPU</span><div class="meter-bar"><div class="meter-fill" id="cpu-fill"></div></div><span class="meter-val" id="cpu-val">-</span></div>
     <div class="sys-meter"><span class="meter-label">RAM</span><div class="meter-bar"><div class="meter-fill" id="ram-fill"></div></div><span class="meter-val" id="ram-val">-</span></div>
@@ -484,9 +499,9 @@
   <div class="table-wrap">
     <table id="proc-table">
       <thead><tr>
-        <th class="sortable asc" onclick="sortProcs('type')">TYPE</th>
-        <th class="sortable" onclick="sortProcs('pid')">PID</th>
-        <th class="sortable" onclick="sortProcs('project')">PROJET</th>
+        <th class="sortable asc" onclick="sortProcs('type',event)">TYPE</th>
+        <th class="sortable" onclick="sortProcs('pid',event)">PID</th>
+        <th class="sortable" onclick="sortProcs('project',event)">PROJET</th>
         <th>COMMANDE</th>
         <th>PORTS</th>
         <th>REPERTOIRE</th>
@@ -497,7 +512,6 @@
   </div>
 </div>
 
-<hr class="divider">
 
 <!-- Docker -->
 <div class="section-card collapsed" id="section-docker">
@@ -519,7 +533,6 @@
   </div>
 </div>
 
-<hr class="divider">
 
 <!-- Ports -->
 <div class="section-card collapsed" id="section-ports">
@@ -541,7 +554,6 @@
   </div>
 </div>
 
-<hr class="divider">
 
 <!-- Connexions actives -->
 <div class="section-card collapsed" id="section-conns">
@@ -580,6 +592,54 @@
     <div class="kill-btns">
       <button class="btn-confirm" onclick="confirmAction()">Confirmer</button>
       <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Disclaimer modal -->
+<div class="modal-backdrop" id="disclaimer-modal">
+  <div class="disclaimer-content">
+    <h2>Securite &amp; conditions d'utilisation</h2>
+
+    <div class="warn-box">
+      Cet outil est concu UNIQUEMENT pour un usage local.<br>
+      Ne JAMAIS l'exposer sur un reseau, un VPN, un reverse proxy, ou Internet.
+    </div>
+
+    <h3>Ce qui est protege</h3>
+    <ul>
+      <li>Serveur bind sur <strong>127.0.0.1</strong> uniquement</li>
+      <li>CORS restreint aux origines localhost</li>
+      <li>Allowlist de PIDs : seuls les processus scannes peuvent etre tues</li>
+      <li>Allowlist Docker : seuls les containers scannes peuvent etre stoppes/redemarres</li>
+      <li>Pas de shell=True dans les commandes systeme</li>
+      <li>Echappement HTML contre les injections XSS</li>
+      <li>Processus Docker filtres (pas de pollution par les healthchecks)</li>
+      <li>Zero appel reseau externe (icones locales, pas de CDN)</li>
+    </ul>
+
+    <h3>Ce qui n'est PAS protege</h3>
+    <ul>
+      <li>Pas d'authentification (inutile en local)</li>
+      <li>Pas de chiffrement TLS (inutile en loopback)</li>
+      <li>Pas de rate limiting</li>
+      <li>Les commandes des processus peuvent contenir des secrets</li>
+    </ul>
+
+    <div class="ok-box">
+      Ces choix sont volontaires. Pour un outil local sur 127.0.0.1, ces mesures sont suffisantes.
+    </div>
+
+    <h3>A ne JAMAIS faire</h3>
+    <ul>
+      <li>Changer le bind 127.0.0.1 en 0.0.0.0</li>
+      <li>Exposer le port 3999 via un reverse proxy</li>
+      <li>Utiliser cet outil sur un serveur partage</li>
+      <li>Ajouter "null" dans les origines CORS</li>
+    </ul>
+
+    <div style="text-align:center;margin-top:18px;">
+      <button class="btn" onclick="document.getElementById('disclaimer-modal').classList.remove('show')" style="padding:6px 24px;">Compris</button>
     </div>
   </div>
 </div>
@@ -686,7 +746,7 @@ function techIcon(name, image) {
 // ── Sort state ──
 let procSort = { key: 'type', dir: 'asc' };
 
-function sortProcs(key) {
+function sortProcs(key, e) {
   if (procSort.key === key) {
     procSort.dir = procSort.dir === 'asc' ? 'desc' : 'asc';
   } else {
@@ -694,39 +754,11 @@ function sortProcs(key) {
     procSort.dir = key === 'project' ? 'asc' : 'desc';
   }
   document.querySelectorAll('#proc-table th.sortable').forEach(th => th.classList.remove('asc', 'desc'));
-  event.target.closest('th').classList.add(procSort.dir);
+  e.target.closest('th').classList.add(procSort.dir);
   renderAll();
 }
 
 // ── Sparkline history ──
-const cpuHistory = {};
-const memHistory = {};
-const HISTORY_LEN = 20;
-
-function updateHistory(procs) {
-  const seenPids = new Set();
-  procs.forEach(r => {
-    seenPids.add(r.pid);
-    if (!cpuHistory[r.pid]) cpuHistory[r.pid] = [];
-    if (!memHistory[r.pid]) memHistory[r.pid] = [];
-    cpuHistory[r.pid].push(r.cpu);
-    memHistory[r.pid].push(r.mem);
-    if (cpuHistory[r.pid].length > HISTORY_LEN) cpuHistory[r.pid].shift();
-    if (memHistory[r.pid].length > HISTORY_LEN) memHistory[r.pid].shift();
-  });
-  Object.keys(cpuHistory).forEach(pid => {
-    if (!seenPids.has(Number(pid))) { delete cpuHistory[pid]; delete memHistory[pid]; }
-  });
-}
-
-function sparkline(values, color) {
-  if (values.length < 2) return '';
-  const w = 50, h = 16;
-  const max = Math.max(...values, 0.1);
-  const step = w / (values.length - 1);
-  const points = values.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * h).toFixed(1)}`).join(' ');
-  return `<svg width="${w}" height="${h}" style="vertical-align:middle;margin-left:6px;"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-}
 
 // ── Notifications ──
 let prevProcs = {};       // pid → {project, cmd, type, ports}
@@ -745,19 +777,25 @@ function showToast(title, body, type) {
 }
 
 // ── Sound notifications ──
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
 
 function playTone(freq, duration, volume) {
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
+  const ctx = getAudioCtx();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
   osc.connect(gain);
-  gain.connect(audioCtx.destination);
+  gain.connect(ctx.destination);
   osc.frequency.value = freq;
   osc.type = 'sine';
   gain.gain.value = volume || 0.08;
-  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
   osc.start();
-  osc.stop(audioCtx.currentTime + duration);
+  osc.stop(ctx.currentTime + duration);
 }
 
 function soundUp() { playTone(880, 0.15, 0.06); setTimeout(() => playTone(1100, 0.12, 0.05), 120); }
@@ -865,7 +903,6 @@ async function fetchData() {
     connData = connRes && connRes.ok ? await connRes.json() : [];
     const sysData = sysRes && sysRes.ok ? await sysRes.json() : null;
     if (sysData) renderSystem(sysData);
-    updateHistory(procData);
     checkNotifications(procData, dockerData);
     setStatus('connecte', 'ok');
     renderAll();
@@ -898,7 +935,7 @@ function matchDocker(r, f) {
     (r.internal_ports || []).some(p => String(p).includes(f));
 }
 
-function cpuClass(v) { return v > 15 ? 'cpu burn' : v > 8 ? 'cpu hot' : 'cpu'; }
+
 function ts() { return new Date().toTimeString().slice(0, 8); }
 
 function renderAll() {
