@@ -7,8 +7,8 @@ import json
 from flask import jsonify, request
 from src.helpers import (
     run_cmd, is_in_container, docker_available, get_cwd, get_cmdline, get_venv,
-    get_project_name, get_ports_for_pid, classify_process, get_cpu_usage,
-    get_ram_usage, get_disk_usage, get_gpu_usage, MAX_CMD_LEN,
+    get_project_name, get_ports_for_pid, classify_process, is_native_binary,
+    get_cpu_usage, get_ram_usage, get_disk_usage, get_gpu_usage, MAX_CMD_LEN,
 )
 
 # Allowlists: only PIDs/containers seen by the last scan can be acted upon
@@ -35,8 +35,6 @@ def register_routes(app):
             cmd_full = parts[10]
 
             proc_type = classify_process(cmd_full)
-            if not proc_type:
-                continue
             if "ps aux" in cmd_full:
                 continue
 
@@ -60,6 +58,13 @@ def register_routes(app):
             # Skip system services (cwd outside home or /tmp)
             if not (cwd.startswith(home) or cwd.startswith("/tmp")):
                 continue
+
+            # Fallback: detect native ELF binaries from user's home
+            if not proc_type:
+                if is_native_binary(pid):
+                    proc_type = "native"
+                else:
+                    continue
 
             cmdline = get_cmdline(pid) or cmd_full
 

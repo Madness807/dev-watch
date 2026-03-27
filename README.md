@@ -5,7 +5,7 @@
 <h1 align="center">DEV WATCH</h1>
 
 <p align="center">
-  <strong>v1.1.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+  <strong>v1.2.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 </p>
 
 <!-- Screenshot will be added in a future update -->
@@ -49,16 +49,15 @@
 
 ### Processes
 - Auto-detection of **Node.js**, **Python**, **Rust** (cargo), **Go** (go run), **Deno**, **Bun**, **Java** (java/mvn/gradle), **PHP** (php/composer), **Ruby** (ruby/rails/bundle), and **C/C++** (gcc/make/cmake/gdb) processes
+- **Native binary detection**: compiled ELF binaries (C++, Go, Zig, etc.) running from `$HOME` are detected as `native` via `/proc/{pid}/exe` + ELF magic bytes
 - Excludes system services and Docker container processes
 - Venv detection: shows which Python virtual environment a process runs in
-- Quick filter buttons by type
+- Quick filter buttons by type (11 types)
 - Sortable columns (type, PID, project)
 - Kill button (SIGTERM)
 
 > [!NOTE]
-> **Compiled language limitations:** Only build tools and interpreters are detected:
-> Rust (`cargo`), Go (`go run/build/test`), C/C++ (`gcc`, `make`, `cmake`, `gdb`).
-> Compiled binaries (e.g. `./my-app`) cannot be identified by language without metadata.
+> **Compiled binaries**: Interpreted languages (Node, Python, Ruby, etc.) are identified by their interpreter in the command line. Compiled binaries (`./my-app`) have no such marker, so they are detected as `native` if the executable is an ELF binary located in your home directory.
 > Shell scripts (bash/zsh) are intentionally excluded to avoid noise from terminal sessions.
 
 ### Docker Containers
@@ -167,7 +166,7 @@ dev-watch/
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Dashboard HTML |
-| `/api/ps` | GET | Node/Python processes (excludes containers) |
+| `/api/ps` | GET | Dev processes + native binaries (excludes containers) |
 | `/api/docker` | GET | Docker containers (status, health, ports, compose project) |
 | `/api/ports` | GET | All listening TCP ports |
 | `/api/connections` | GET | Active TCP connections (ESTABLISHED) |

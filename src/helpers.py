@@ -135,6 +135,23 @@ def classify_process(cmd_full):
     return None
 
 
+def is_native_binary(pid):
+    """Check if a PID is a native ELF binary running from user's home."""
+    try:
+        exe = os.readlink(f"/proc/{pid}/exe")
+    except Exception:
+        return False
+    home = os.path.expanduser("~")
+    if not exe.startswith(home):
+        return False
+    # Check ELF magic bytes
+    try:
+        with open(exe, "rb") as f:
+            return f.read(4) == b"\x7fELF"
+    except Exception:
+        return False
+
+
 # ── System metrics ──
 
 def get_cpu_usage(prev_state):

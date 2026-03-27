@@ -44,7 +44,7 @@ def test_ps_entries_have_required_fields(client):
     required = {"pid", "type", "project", "cmd", "ports", "dir"}
     for proc in data:
         assert required.issubset(proc.keys()), f"Missing fields in {proc}"
-        assert proc["type"] in ("node", "python")
+        assert proc["type"] in ("node", "python", "rust", "go", "deno", "bun", "java", "php", "ruby", "c", "native")
         assert isinstance(proc["pid"], int)
         assert isinstance(proc["ports"], list)
 
