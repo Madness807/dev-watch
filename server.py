@@ -46,6 +46,15 @@ def run_cmd(cmd):
     except (subprocess.CalledProcessError, FileNotFoundError):
         return ""
 
+def is_in_container(pid):
+    """Verifie si un PID tourne dans un container Docker."""
+    try:
+        with open(f"/proc/{pid}/cgroup") as f:
+            content = f.read()
+            return "docker" in content or "containerd" in content
+    except Exception:
+        return False
+
 def docker_available():
     """Check if Docker daemon is reachable."""
     try:
@@ -158,6 +167,8 @@ def api_ps():
         seen_pids.add(pid)
 
         if pid == os.getpid():
+            continue
+        if is_in_container(pid):
             continue
 
         cwd = get_cwd(pid)
@@ -365,6 +376,131 @@ def api_ports():
 
     ports.sort(key=lambda x: x["port"])
     return jsonify(ports)
+
+
+@app.route("/api/system")
+def api_system():
+    """Ressources systeme : CPU, RAM, disque, GPU."""
+    result = {}
+
+    # CPU usage (average over all cores)
+    try:
+        with open("/proc/stat") as f:
+            lines = f.readlines()
+        cpu = lines[0].split()
+        idle = int(cpu[4])
+        total = sum(int(x) for x in cpu[1:])
+        # store for delta calculation
+        if not hasattr(api_system, '_prev'):
+            api_system._prev = (total, idle)
+        prev_total, prev_idle = api_system._prev
+        dt = total - prev_total
+        di = idle - prev_idle
+        cpu_pct = round((1 - di / dt) * 100, 1) if dt > 0 else 0.0
+        api_system._prev = (total, idle)
+        result["cpu"] = cpu_pct
+    except Exception:
+        result["cpu"] = 0.0
+
+    # RAM
+    try:
+        with open("/proc/meminfo") as f:
+            mem = {}
+            for line in f:
+                parts = line.split()
+                mem[parts[0].rstrip(":")] = int(parts[1])
+        total_mb = mem.get("MemTotal", 0) / 1024
+        avail_mb = mem.get("MemAvailable", 0) / 1024
+        used_mb = total_mb - avail_mb
+        result["ram"] = {"used": round(used_mb), "total": round(total_mb), "pct": round(used_mb / total_mb * 100, 1) if total_mb > 0 else 0}
+    except Exception:
+        result["ram"] = {"used": 0, "total": 0, "pct": 0}
+
+    # Disk (root partition)
+    try:
+        st = os.statvfs("/")
+        total_gb = (st.f_blocks * st.f_frsize) / (1024**3)
+        free_gb = (st.f_bavail * st.f_frsize) / (1024**3)
+        used_gb = total_gb - free_gb
+        result["disk"] = {"used": round(used_gb, 1), "total": round(total_gb, 1), "pct": round(used_gb / total_gb * 100, 1) if total_gb > 0 else 0}
+    except Exception:
+        result["disk"] = {"used": 0, "total": 0, "pct": 0}
+
+    # GPU (nvidia-smi if available)
+    gpu_out = run_cmd(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"])
+    if gpu_out.strip():
+        try:
+            parts = gpu_out.strip().split(",")
+            gpu_pct = float(parts[0].strip())
+            vram_used = float(parts[1].strip())
+            vram_total = float(parts[2].strip())
+            result["gpu"] = {"pct": round(gpu_pct, 1), "vram_used": round(vram_used), "vram_total": round(vram_total)}
+        except Exception:
+            result["gpu"] = None
+    else:
+        result["gpu"] = None
+
+    return jsonify(result)
+
+
+@app.route("/api/connections")
+def api_connections():
+    """Connexions TCP actives (ESTABLISHED)."""
+    out = run_cmd(["ss", "-tnp"])
+    connections = []
+    for line in out.splitlines()[1:]:
+        if "ESTAB" not in line:
+            continue
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+
+        local = parts[3]
+        remote = parts[4]
+
+        pid_match = re.search(r'pid=(\d+)', line)
+        pid = int(pid_match.group(1)) if pid_match else None
+        process_name = ""
+        if pid:
+            name_match = re.search(r'\("([^"]+)"', line)
+            process_name = name_match.group(1) if name_match else ""
+
+        connections.append({
+            "local": local,
+            "remote": remote,
+            "pid": pid,
+            "process": process_name,
+        })
+
+    connections.sort(key=lambda x: x["remote"])
+    return jsonify(connections)
+
+
+@app.route("/api/docker/disk")
+def api_docker_disk():
+    """Resume espace disque Docker."""
+    if not docker_available():
+        return jsonify({})
+
+    out = run_cmd(["docker", "system", "df", "--format", "{{json .}}"])
+    if not out.strip():
+        return jsonify({})
+
+    result = []
+    for line in out.strip().splitlines():
+        try:
+            d = json.loads(line)
+            result.append({
+                "type": d.get("Type", ""),
+                "total": d.get("TotalCount", 0),
+                "active": d.get("Active", 0),
+                "size": d.get("Size", ""),
+                "reclaimable": d.get("Reclaimable", ""),
+            })
+        except json.JSONDecodeError:
+            continue
+
+    return jsonify(result)
 
 
 @app.route("/api/health")
