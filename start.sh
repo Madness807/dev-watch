@@ -10,10 +10,11 @@ if [ ! -d ".venv" ]; then
 fi
 
 # Kill previous server if running
-pkill -f "python3 $(pwd)/server.py" 2>/dev/null
+pkill -f "python3.*src/server.py" 2>/dev/null
+pkill -f "python3.*src.server" 2>/dev/null
 
 # Start server using venv Python
-.venv/bin/python3 server.py &
+.venv/bin/python3 -m src.server &
 SERVER_PID=$!
 
 # Wait for server to be ready

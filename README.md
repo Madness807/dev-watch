@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="icons/dev-watch-logo.svg" alt="dev-watch logo" width="80" height="80">
+  <img src="static/icons/dev-watch-logo.svg" alt="dev-watch logo" width="80" height="80">
 </p>
 
 <h1 align="center">DEV WATCH</h1>
@@ -133,17 +133,25 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 
 ## Architecture
 
-| File | Role |
-|------|------|
-| `server.py` | Flask app setup, static routes, entrypoint |
-| `routes.py` | All API route handlers |
-| `helpers.py` | System helpers: process scanning, Docker, network, metrics |
-| `dev-watch.html` | Web interface: consumes the API |
-| `icons/` | 22 local SVG icons (tech detection) |
-| `tests/` | pytest test suite (22 tests) |
-| `start.sh` | Launcher: creates venv, installs deps, starts server, opens browser |
-| `requirements.txt` | Python dependencies |
-| `dev-watch.service` | Systemd service file (optional) |
+```
+dev-watch/
+├── src/
+│   ├── __init__.py
+│   ├── server.py          # Flask app setup, static routes, entrypoint
+│   ├── routes.py          # All API route handlers
+│   └── helpers.py         # System helpers: process scanning, Docker, network, metrics
+├── static/
+│   ├── index.html         # Web dashboard (single-file frontend)
+│   └── icons/             # 22 local SVG tech icons
+├── tests/
+│   └── test_api.py        # pytest test suite (22 tests)
+├── start.sh               # Launcher: creates venv, installs deps, starts server
+├── requirements.txt       # Python dependencies
+├── dev-watch.service      # Systemd service file (optional)
+├── CHANGELOG.md
+├── LICENSE
+└── README.md
+```
 
 ## API
 

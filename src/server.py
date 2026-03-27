@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 dev-watch — Local process & container monitor.
-Launch: python3 server.py
+Launch: python3 -m src.server
 Dashboard: http://localhost:3999
 """
 
@@ -9,10 +9,11 @@ import os
 import logging
 from flask import Flask, send_from_directory
 from flask_cors import CORS
-from routes import register_routes
+from src.routes import register_routes
 
 PORT = 3999
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:*", "http://127.0.0.1:*"])
@@ -20,12 +21,12 @@ CORS(app, origins=["http://localhost:*", "http://127.0.0.1:*"])
 
 @app.route("/")
 def serve_dashboard():
-    return send_from_directory(BASE_DIR, "dev-watch.html")
+    return send_from_directory(STATIC_DIR, "index.html")
 
 
 @app.route("/icons/<path:filename>")
 def serve_icon(filename):
-    return send_from_directory(os.path.join(BASE_DIR, "icons"), filename)
+    return send_from_directory(os.path.join(STATIC_DIR, "icons"), filename)
 
 
 register_routes(app)

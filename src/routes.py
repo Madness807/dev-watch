@@ -5,7 +5,7 @@ import re
 import signal
 import json
 from flask import jsonify, request
-from helpers import (
+from src.helpers import (
     run_cmd, is_in_container, docker_available, get_cwd, get_cmdline,
     get_project_name, get_ports_for_pid, classify_process, get_cpu_usage,
     get_ram_usage, get_disk_usage, get_gpu_usage, MAX_CMD_LEN,
