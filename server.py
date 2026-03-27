@@ -21,11 +21,21 @@ PORT = 3999
 
 # ── Utilitaires ──────────────────────────────
 
-def run(cmd):
+def run_cmd(cmd):
+    """Run a command safely without shell=True. cmd is a list."""
     try:
-        return subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL, text=True)
-    except Exception:
+        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return ""
+
+
+def docker_available():
+    """Check if Docker daemon is reachable."""
+    try:
+        subprocess.check_output(["docker", "info"], stderr=subprocess.DEVNULL, text=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
 def get_cwd(pid):
     try:
@@ -55,7 +65,7 @@ def get_project_name(cwd):
 def get_ports_for_pid(pid):
     """Retourne la liste des ports TCP en écoute pour un PID donné."""
     ports = []
-    out = run("ss -tlnp")
+    out = run_cmd(["ss", "-tlnp"])
     for line in out.splitlines():
         if f"pid={pid}," in line:
             m = re.search(r':(\d+)\s', line.split("Local")[0] if "Local" in line else line)
@@ -95,7 +105,7 @@ def get_cpu_mem(pid):
 @app.route("/api/ps")
 def api_ps():
     """Retourne tous les processus Node/npm en cours."""
-    out = run("ps aux")
+    out = run_cmd(["ps", "aux"])
     processes = []
     seen_pids = set()
 
@@ -165,6 +175,35 @@ def api_kill():
         return jsonify({"error": "Processus introuvable"}), 404
     except PermissionError:
         return jsonify({"error": "Permission refusée"}), 403
+
+
+@app.route("/api/docker")
+def api_docker():
+    """Retourne les conteneurs Docker en cours avec leur statut."""
+    if not docker_available():
+        return jsonify([])
+
+    ids_out = run_cmd(["docker", "ps", "-q"])
+    container_ids = ids_out.strip().splitlines()
+    if not container_ids:
+        return jsonify([])
+
+    inspect_out = run_cmd(
+        ["docker", "inspect", "--format",
+         '{{.ID}}|||{{index .Config.Labels "com.docker.compose.project"}}|||{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}']
+        + container_ids
+    )
+
+    containers = []
+    for line in inspect_out.strip().splitlines():
+        parts = line.split("|||")
+        if len(parts) == 3:
+            containers.append({
+                "id": parts[0][:12],
+                "project": parts[1] or "unknown",
+                "health": parts[2],
+            })
+    return jsonify(containers)
 
 
 @app.route("/api/health")
