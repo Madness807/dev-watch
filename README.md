@@ -135,9 +135,12 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 
 | File | Role |
 |------|------|
-| `server.py` | Flask server (port 3999): REST API + serves the dashboard |
+| `server.py` | Flask app setup, static routes, entrypoint |
+| `routes.py` | All API route handlers |
+| `helpers.py` | System helpers: process scanning, Docker, network, metrics |
 | `dev-watch.html` | Web interface: consumes the API |
 | `icons/` | 22 local SVG icons (tech detection) |
+| `tests/` | pytest test suite (22 tests) |
 | `start.sh` | Launcher: creates venv, installs deps, starts server, opens browser |
 | `requirements.txt` | Python dependencies |
 | `dev-watch.service` | Systemd service file (optional) |
