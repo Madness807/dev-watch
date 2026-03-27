@@ -2,7 +2,8 @@
 
 Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 
-> **WARNING: This tool is designed for LOCAL USE ONLY.**
+> [!CAUTION]
+> **This tool is designed for LOCAL USE ONLY.**
 > It must NEVER be exposed on a network, VPN, reverse proxy, or the Internet.
 > There is no authentication. Anyone who can reach port 3999 can see your processes
 > and kill them. Do not change the bind from `127.0.0.1` to `0.0.0.0`.
