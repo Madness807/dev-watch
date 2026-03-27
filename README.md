@@ -20,7 +20,7 @@
 | ![JavaScript](https://img.shields.io/badge/Vanilla_JS-F7DF1E?logo=javascript&logoColor=black) | Frontend logic, Web Audio API, Notification toasts |
 | ![CSS3](https://img.shields.io/badge/CSS3-1572B6?logo=css3&logoColor=white) | Dark theme, responsive layout, animations |
 | ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white) | Container monitoring (optional) |
-| ![SVG](https://img.shields.io/badge/SVG_Icons-FFB13B?logo=svg&logoColor=black) | 22 local tech icons (zero CDN) |
+| ![SVG](https://img.shields.io/badge/SVG_Icons-FFB13B?logo=svg&logoColor=black) | 22 local tech icons from [Dashboard Icons](https://dashboardicons.com/) (zero CDN, served locally) |
 
 ## Features
 
