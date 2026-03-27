@@ -10,6 +10,23 @@
 > There is no authentication. Anyone who can reach port 3999 can see your processes
 > and kill them. Do not change the bind from `127.0.0.1` to `0.0.0.0`.
 
+---
+
+## Table of Contents
+
+- [Tech Stack](#tech-stack)
+- [Features](#features)
+- [Installation](#installation)
+- [Security](#security)
+- [Architecture](#architecture)
+- [API](#api)
+- [Requirements](#requirements)
+- [Platform Support](#platform-support)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
 ## Tech Stack
 
 | Technology | Usage |
@@ -89,22 +106,24 @@ sudo systemctl enable --now dev-watch
 
 A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes all security measures in place.
 
-### Active protections
-- **Bind 127.0.0.1**: invisible from the network
-- **Restricted CORS**: localhost only, no `null`, no `file://`
-- **PID allowlist**: only scanned processes can be killed (403 otherwise)
-- **Container allowlist**: only scanned containers can be acted upon (403 otherwise)
-- **No shell=True**: all commands via subprocess with argument lists
-- **HTML escaping**: XSS protection on all dynamic data
-- **Docker filtering**: processes running inside containers are excluded from the Processes section
-- **Dashboard served by Flask**: no file://, same origin
-- **Virtual environment**: dependencies isolated from system Python
+> [!TIP]
+> **Active protections**
+> - **Bind 127.0.0.1**: invisible from the network
+> - **Restricted CORS**: localhost only, no `null`, no `file://`
+> - **PID allowlist**: only scanned processes can be killed (403 otherwise)
+> - **Container allowlist**: only scanned containers can be acted upon (403 otherwise)
+> - **No shell=True**: all commands via subprocess with argument lists
+> - **HTML escaping**: XSS protection on all dynamic data
+> - **Docker filtering**: processes running inside containers are excluded from the Processes section
+> - **Dashboard served by Flask**: no file://, same origin
+> - **Virtual environment**: dependencies isolated from system Python
 
-### Not protected (by design)
-- No authentication (unnecessary on 127.0.0.1)
-- No TLS (unnecessary on loopback)
-- No rate limiting (local DoS = you DoS yourself)
-- Process command lines may contain visible secrets in the dashboard
+> [!WARNING]
+> **Not protected (by design)**
+> - No authentication (unnecessary on 127.0.0.1)
+> - No TLS (unnecessary on loopback)
+> - No rate limiting (local DoS = you DoS yourself)
+> - Process command lines may contain visible secrets in the dashboard
 
 ## Architecture
 
