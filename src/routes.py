@@ -64,8 +64,8 @@ def register_routes(app):
                     else:
                         continue
 
-                # Skip system services: commands where the script/module is a system path
-                # (but keep user scripts launched with /usr/bin/python3)
+                # Skip system services: commands where the script/module is a Linux/macOS
+                # system path. On Windows, no path starts with /usr/ so this is a no-op.
                 cmd_parts = cmd_full.split()
                 script_args = [a for a in cmd_parts[1:] if not a.startswith("-")]
                 if script_args and any(a.startswith(("/usr/bin/", "/usr/share/", "/usr/sbin/", "/usr/lib/")) for a in script_args):

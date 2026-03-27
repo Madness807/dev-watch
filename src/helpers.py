@@ -164,7 +164,11 @@ def is_native_binary(pid):
 # ── System metrics ──
 
 def get_cpu_usage(prev_state):
-    """Return (cpu_pct, new_state). Pass None for first call."""
+    """Return (cpu_pct, new_state). Pass None for first call.
+
+    new_state is an opaque token — pass it back on the next call.
+    psutil tracks CPU state internally, so the first call returns 0.0.
+    """
     try:
         pct = psutil.cpu_percent(interval=None)
         return round(pct, 1), True
