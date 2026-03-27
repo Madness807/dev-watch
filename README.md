@@ -1,6 +1,6 @@
 # dev-watch
 
-Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+**v1.0.0** — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 
 > [!CAUTION]
 > **This tool is designed for LOCAL USE ONLY.**
@@ -100,6 +100,18 @@ pip install flask flask-cors --break-system-packages
 
 - Python 3
 - Flask + flask-cors
-- Linux (uses `/proc` for process info)
+- **Linux** (uses `/proc` for process info)
 - Docker (optional)
 - nvidia-smi (optional, for GPU)
+
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| **Linux** | Supported | Full support, primary target |
+| **WSL2** | Partial | `/proc` and `ss` work. Docker works if Docker Desktop is configured for WSL2. Windows processes are not visible. |
+| **macOS** | Not supported | No `/proc`, no `ss`. Would require `lsof`, `sysctl`, different `ps` format. |
+| **Windows** | Not supported | All dependencies are Linux-specific. |
+
+> [!NOTE]
+> **macOS and Windows support are planned for a future release.** Contributions welcome.
