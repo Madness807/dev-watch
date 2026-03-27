@@ -206,6 +206,44 @@ def api_docker():
     return jsonify(containers)
 
 
+@app.route("/api/docker/stop", methods=["POST"])
+def api_docker_stop():
+    """Arrête un conteneur Docker par ID."""
+    data = request.get_json()
+    container_id = data.get("id") if data else None
+
+    if not container_id or not isinstance(container_id, str):
+        return jsonify({"error": "ID conteneur invalide"}), 400
+
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
+        return jsonify({"error": "ID conteneur invalide"}), 400
+
+    result = run_cmd(["docker", "stop", container_id])
+    if result.strip():
+        return jsonify({"ok": True, "id": container_id})
+    else:
+        return jsonify({"error": "Impossible d'arrêter le conteneur"}), 500
+
+
+@app.route("/api/docker/restart", methods=["POST"])
+def api_docker_restart():
+    """Redémarre un conteneur Docker par ID."""
+    data = request.get_json()
+    container_id = data.get("id") if data else None
+
+    if not container_id or not isinstance(container_id, str):
+        return jsonify({"error": "ID conteneur invalide"}), 400
+
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
+        return jsonify({"error": "ID conteneur invalide"}), 400
+
+    result = run_cmd(["docker", "restart", container_id])
+    if result.strip():
+        return jsonify({"ok": True, "id": container_id})
+    else:
+        return jsonify({"error": "Impossible de redémarrer le conteneur"}), 500
+
+
 @app.route("/api/health")
 def health():
     return jsonify({"status": "ok", "port": PORT})

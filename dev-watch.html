@@ -178,6 +178,33 @@
   }
   .kill-btn:hover { border-color: var(--red); color: var(--red); background: rgba(248,113,113,.08); }
 
+  .stop-btn {
+    background: transparent;
+    border: 1px solid rgba(248,113,113,.2);
+    border-radius: 4px;
+    color: rgba(248,113,113,.5);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .stop-btn:hover { border-color: var(--red); color: var(--red); background: rgba(248,113,113,.08); }
+
+  .restart-btn {
+    background: transparent;
+    border: 1px solid rgba(251,191,36,.2);
+    border-radius: 4px;
+    color: rgba(251,191,36,.5);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    cursor: pointer;
+    transition: all .15s;
+    margin-right: 4px;
+  }
+  .restart-btn:hover { border-color: var(--amber); color: var(--amber); background: rgba(251,191,36,.08); }
+
   /* ── Status bar ── */
   .status-bar {
     background: var(--surface);
@@ -296,6 +323,23 @@
   </div>
 </div>
 
+<hr class="divider">
+
+<div>
+  <div class="section-header">
+    Conteneurs Docker
+    <span id="docker-count">—</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>ID</th><th>PROJET</th><th>SANTÉ</th><th></th>
+      </tr></thead>
+      <tbody id="docker-body"><tr><td colspan="4" class="empty">Chargement...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 <div class="status-bar">
   <div class="status-item">CPU total : <span class="val" id="total-cpu">—</span></div>
   <div class="status-item">Mémoire : <span class="warn" id="total-mem">—</span></div>
@@ -304,15 +348,15 @@
   <div class="status-item" id="last-scan">—</div>
 </div>
 
-<!-- Kill modal -->
+<!-- Kill/Action modal -->
 <div class="modal-backdrop" id="kill-modal">
   <div class="kill-dialog">
-    <p>Tuer le processus ?</p>
+    <p id="modal-title">Tuer le processus ?</p>
     <span class="kill-pid-big" id="kill-pid-display"></span>
     <span class="kill-proj-big" id="kill-proj-display"></span>
-    <p style="font-size:11px;">SIGTERM → SIGKILL si résistant</p>
+    <p style="font-size:11px;" id="modal-detail">SIGTERM → SIGKILL si résistant</p>
     <div class="kill-btns">
-      <button class="btn-confirm" onclick="confirmKill()">⚡ Kill</button>
+      <button class="btn-confirm" onclick="confirmAction()">⚡ Confirmer</button>
       <button class="btn-cancel" onclick="closeModal()">Annuler</button>
     </div>
   </div>
@@ -320,7 +364,9 @@
 
 <script>
 let data = [];
+let dockerData = [];
 let killTarget = null;
+let actionTarget = null;
 let watchInterval = null;
 let watchActive = true;
 
@@ -352,6 +398,17 @@ async function fetchData() {
   } catch(e) {
     setStatus('✗ ' + e.message, 'err');
     showError('Impossible de joindre le serveur — lance python3 server.py');
+  }
+}
+
+async function fetchDocker() {
+  try {
+    const res = await fetch(apiBase() + '/api/docker', { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) return;
+    dockerData = await res.json();
+    renderDocker(dockerData);
+  } catch(e) {
+    // silently ignore docker errors
   }
 }
 
@@ -388,6 +445,37 @@ function renderAll() {
   document.getElementById('total-mem').textContent = totalMem + ' MB';
   document.getElementById('total-procs').textContent = data.length;
   document.getElementById('last-scan').textContent = 'Dernière analyse : ' + ts();
+}
+
+function healthColor(h) {
+  if (h === 'healthy') return 'var(--green)';
+  if (h === 'unhealthy') return 'var(--red)';
+  if (h === 'starting') return 'var(--amber)';
+  return 'var(--text-dim)';
+}
+
+function containerRow(r, i) {
+  return `
+    <tr style="animation-delay:${i * 35}ms">
+      <td class="pid">${esc(r.id)}</td>
+      <td class="project">${esc(r.project)}</td>
+      <td style="color:${healthColor(r.health)};font-size:11px;">${esc(r.health)}</td>
+      <td>
+        <button class="restart-btn" onclick="askDockerRestart('${esc(r.id)}','${esc(r.name || r.project).replace(/'/g,"\\'")}')">restart</button>
+        <button class="stop-btn" onclick="askDockerStop('${esc(r.id)}','${esc(r.name || r.project).replace(/'/g,"\\'")}')">stop</button>
+      </td>
+    </tr>
+  `;
+}
+
+function renderDocker(rows) {
+  document.getElementById('docker-count').textContent = rows.length + ' conteneur(s)';
+  const tbody = document.getElementById('docker-body');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">Aucun conteneur Docker en cours</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map((r, i) => containerRow(r, i)).join('');
 }
 
 function renderProcs(rows) {
@@ -432,27 +520,69 @@ function renderPorts(rows) {
 }
 
 function askKill(pid, project) {
-  killTarget = { pid, project };
+  actionTarget = { kind: 'kill', pid, project };
+  document.getElementById('modal-title').textContent = 'Tuer le processus ?';
   document.getElementById('kill-pid-display').textContent = pid;
   document.getElementById('kill-proj-display').textContent = project;
+  document.getElementById('modal-detail').textContent = 'SIGTERM → SIGKILL si résistant';
   document.getElementById('kill-modal').classList.add('show');
 }
-function closeModal() { document.getElementById('kill-modal').classList.remove('show'); killTarget = null; }
 
-async function confirmKill() {
-  if (!killTarget) return;
+function askDockerStop(id, name) {
+  actionTarget = { kind: 'docker-stop', id, name };
+  document.getElementById('modal-title').textContent = 'Arrêter le conteneur ?';
+  document.getElementById('kill-pid-display').textContent = id.substring(0, 12);
+  document.getElementById('kill-proj-display').textContent = name;
+  document.getElementById('modal-detail').textContent = 'docker stop';
+  document.getElementById('kill-modal').classList.add('show');
+}
+
+function askDockerRestart(id, name) {
+  actionTarget = { kind: 'docker-restart', id, name };
+  document.getElementById('modal-title').textContent = 'Redémarrer le conteneur ?';
+  document.getElementById('kill-pid-display').textContent = id.substring(0, 12);
+  document.getElementById('kill-proj-display').textContent = name;
+  document.getElementById('modal-detail').textContent = 'docker restart';
+  document.getElementById('kill-modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('kill-modal').classList.remove('show');
+  killTarget = null;
+  actionTarget = null;
+}
+
+async function confirmAction() {
+  const target = actionTarget;
+  if (!target) return;
   closeModal();
   try {
-    const res = await fetch(apiBase() + '/api/kill', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pid: killTarget.pid })
-    });
+    let res;
+    if (target.kind === 'kill') {
+      res = await fetch(apiBase() + '/api/kill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pid: target.pid })
+      });
+    } else if (target.kind === 'docker-stop') {
+      res = await fetch(apiBase() + '/api/docker/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: target.id })
+      });
+    } else if (target.kind === 'docker-restart') {
+      res = await fetch(apiBase() + '/api/docker/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: target.id })
+      });
+    }
     const json = await res.json();
-    if (!res.ok) { showError(json.error || 'Kill échoué'); return; }
+    if (!res.ok) { showError(json.error || 'Action échouée'); return; }
     await fetchData();
+    await fetchDocker();
   } catch(e) {
-    showError('Kill impossible : ' + e.message);
+    showError('Action impossible : ' + e.message);
   }
 }
 
@@ -472,11 +602,12 @@ function toggleWatch() {
 
 function startWatch() {
   clearInterval(watchInterval);
-  watchInterval = setInterval(fetchData, 3000);
+  watchInterval = setInterval(() => { fetchData(); fetchDocker(); }, 3000);
 }
 
 // Init
 fetchData();
+fetchDocker();
 startWatch();
 </script>
 </body>
