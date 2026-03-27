@@ -1,18 +1,14 @@
 [Unit]
-Description=dev-watch — process monitor API
+Description=dev-watch — local process monitor
 After=network.target
 
 [Service]
 Type=simple
-# Adapte ces deux lignes à ton user et au chemin réel de server.py
-User=jonathan
-WorkingDirectory=/home/jonathan/npm-watch
-ExecStart=/usr/bin/python3 /home/jonathan/npm-watch/server.py
+User=__USER__
+WorkingDirectory=__PATH__
+ExecStart=__PATH__/.venv/bin/python3 -m src.server
 Restart=on-failure
 RestartSec=5
-
-# Variables d'environnement si besoin
-# Environment="PORT=3999"
 
 [Install]
 WantedBy=multi-user.target

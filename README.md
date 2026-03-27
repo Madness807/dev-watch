@@ -102,10 +102,11 @@ Press `Ctrl+C` to stop.
 ### Systemd (optional, auto-start on boot)
 
 ```bash
-# Edit dev-watch.service: update User and paths to match your setup
-sudo cp dev-watch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now dev-watch
+# Automatically generates the service file with your user and paths
+./start.sh install
+
+# To remove
+./start.sh uninstall
 ```
 
 ## Security
@@ -142,7 +143,7 @@ dev-watch/
 │   └── helpers.py         # System helpers: process scanning, Docker, network, metrics
 ├── static/
 │   ├── index.html         # Web dashboard (single-file frontend)
-│   └── icons/             # 22 local SVG tech icons
+│   └── icons/             # 22 local SVG tech icons + logo
 ├── tests/
 │   └── test_api.py        # pytest test suite (22 tests)
 ├── start.sh               # Launcher: creates venv, installs deps, starts server
