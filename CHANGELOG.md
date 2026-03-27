@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-27
+
+### Added
+- Process detection for **Rust** (cargo), **Go** (go run/build/test), **Deno**, **Bun**, **Java** (java/mvn/gradle), **PHP** (php/composer), **Ruby** (ruby/rails/bundle), **C/C++** (gcc/make/cmake/gdb)
+- Filter buttons for all 10 languages
+- Color-coded type tags for each language
+- Python **venv detection**: ENV column shows venv project name (blue) or "system" (grey)
+- System service filtering: excludes non-dev processes (firewalld, ProtonVPN, ibus, etc.)
+- `./start.sh install` auto-generates and installs systemd service with correct user/paths
+- `./start.sh uninstall` removes the systemd service
+
+### Removed
+- `/api/docker/disk` endpoint (unused by frontend)
+
+### Fixed
+- Process classifier now detects interpreters in venv paths (e.g. `.venv/bin/python3`)
+- System services no longer pollute the process list
+- dev-watch.service no longer contains hardcoded username/paths
+
 ## [1.0.0] - 2026-03-27
 
 ### Added

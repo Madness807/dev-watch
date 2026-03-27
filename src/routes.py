@@ -6,7 +6,7 @@ import signal
 import json
 from flask import jsonify, request
 from src.helpers import (
-    run_cmd, is_in_container, docker_available, get_cwd, get_cmdline,
+    run_cmd, is_in_container, docker_available, get_cwd, get_cmdline, get_venv,
     get_project_name, get_ports_for_pid, classify_process, get_cpu_usage,
     get_ram_usage, get_disk_usage, get_gpu_usage, MAX_CMD_LEN,
 )
@@ -55,11 +55,22 @@ def register_routes(app):
                 continue
 
             cwd = get_cwd(pid)
+            home = os.path.expanduser("~")
+
+            # Skip system services (cwd outside home or /tmp)
+            if not (cwd.startswith(home) or cwd.startswith("/tmp")):
+                continue
+
             cmdline = get_cmdline(pid) or cmd_full
+
+            # Skip system services: commands where the script/module is a system path
+            # (but keep user scripts launched with /usr/bin/python3)
+            cmd_parts = cmdline.split()
+            script_args = [a for a in cmd_parts[1:] if not a.startswith("-")]
+            if script_args and any(a.startswith(("/usr/bin/", "/usr/share/", "/usr/sbin/", "/usr/lib/")) for a in script_args):
+                continue
             ports = get_ports_for_pid(pid)
             project = get_project_name(cwd, proc_type)
-
-            home = os.path.expanduser("~")
             display_cwd = cwd.replace(home, "~") if cwd != "?" else "?"
 
             processes.append({
@@ -69,6 +80,7 @@ def register_routes(app):
                 "cmd": cmdline[:MAX_CMD_LEN],
                 "ports": ports,
                 "dir": display_cwd,
+                "venv": get_venv(pid),
             })
 
         processes.sort(key=lambda x: x["type"])
@@ -249,22 +261,6 @@ def register_routes(app):
 
         connections.sort(key=lambda x: x["remote"])
         return jsonify(connections)
-
-    @app.route("/api/docker/disk")
-    def api_docker_disk():
-        if not docker_available():
-            return jsonify([])
-        out = run_cmd(["docker", "system", "df", "--format", "{{json .}}"])
-        if not out.strip():
-            return jsonify([])
-        result = []
-        for line in out.strip().splitlines():
-            try:
-                d = json.loads(line)
-                result.append({"type": d.get("Type", ""), "total": d.get("TotalCount", 0), "active": d.get("Active", 0), "size": d.get("Size", ""), "reclaimable": d.get("Reclaimable", "")})
-            except json.JSONDecodeError:
-                continue
-        return jsonify(result)
 
     @app.route("/api/health")
     def health():

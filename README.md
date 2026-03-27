@@ -5,7 +5,7 @@
 <h1 align="center">DEV WATCH</h1>
 
 <p align="center">
-  <strong>v1.0.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+  <strong>v1.1.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 </p>
 
 <!-- Screenshot will be added in a future update -->
@@ -48,10 +48,18 @@
 ## Features
 
 ### Processes
-- Auto-detection of **Node.js** and **Python** processes (excludes Docker containers)
-- Quick filter buttons by type (Node / Python)
+- Auto-detection of **Node.js**, **Python**, **Rust** (cargo), **Go** (go run), **Deno**, **Bun**, **Java** (java/mvn/gradle), **PHP** (php/composer), **Ruby** (ruby/rails/bundle), and **C/C++** (gcc/make/cmake/gdb) processes
+- Excludes system services and Docker container processes
+- Venv detection: shows which Python virtual environment a process runs in
+- Quick filter buttons by type
 - Sortable columns (type, PID, project)
 - Kill button (SIGTERM)
+
+> [!NOTE]
+> **Compiled language limitations:** Only build tools and interpreters are detected:
+> Rust (`cargo`), Go (`go run/build/test`), C/C++ (`gcc`, `make`, `cmake`, `gdb`).
+> Compiled binaries (e.g. `./my-app`) cannot be identified by language without metadata.
+> Shell scripts (bash/zsh) are intentionally excluded to avoid noise from terminal sessions.
 
 ### Docker Containers
 - Grouped by compose project with accordion
@@ -164,7 +172,6 @@ dev-watch/
 | `/api/ports` | GET | All listening TCP ports |
 | `/api/connections` | GET | Active TCP connections (ESTABLISHED) |
 | `/api/system` | GET | CPU, RAM, disk, GPU |
-| `/api/docker/disk` | GET | Docker disk usage |
 | `/api/kill` | POST | Kill process (`{"pid": 1234}`) — allowlist only |
 | `/api/docker/stop` | POST | Stop container (`{"id": "abc123"}`) — allowlist only |
 | `/api/docker/restart` | POST | Restart container (`{"id": "abc123"}`) — allowlist only |

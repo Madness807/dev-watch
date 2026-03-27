@@ -94,6 +94,14 @@
   /* type filter buttons */
   .btn.filter-type.node.active   { border-color: var(--green); color: var(--green); background: rgba(74,222,128,.06); }
   .btn.filter-type.python.active { border-color: var(--purple); color: var(--purple); background: rgba(167,139,250,.06); }
+  .btn.filter-type.rust.active { border-color: var(--red); color: var(--red); background: rgba(248,113,113,.06); }
+  .btn.filter-type.go.active { border-color: var(--cyan); color: var(--cyan); background: rgba(56,189,248,.06); }
+  .btn.filter-type.deno.active { border-color: var(--text); color: var(--text); background: rgba(255,255,255,.04); }
+  .btn.filter-type.bun.active { border-color: var(--amber); color: var(--amber); background: rgba(251,191,36,.06); }
+  .btn.filter-type.java.active { border-color: #e57373; color: #e57373; background: rgba(248,113,113,.06); }
+  .btn.filter-type.php.active { border-color: #9fa8da; color: #9fa8da; background: rgba(167,139,250,.06); }
+  .btn.filter-type.ruby.active { border-color: #ef5350; color: #ef5350; background: rgba(248,113,113,.06); }
+  .btn.filter-type.c.active { border-color: #64b5f6; color: #64b5f6; background: rgba(96,165,250,.06); }
 
   .ep-status { font-size: 11px; white-space: nowrap; }
   .ep-status.ok  { color: var(--green); }
@@ -205,6 +213,30 @@
   .type-tag img { width: 14px; height: 14px; }
   .type-tag.node   { background: rgba(74,222,128,.1); border: 1px solid rgba(74,222,128,.3); color: var(--green); }
   .type-tag.python { background: rgba(167,139,250,.1); border: 1px solid rgba(167,139,250,.3); color: var(--purple); }
+  .type-tag.rust { background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3); color: var(--red); }
+  .type-tag.go { background: rgba(56,189,248,.1); border: 1px solid rgba(56,189,248,.3); color: var(--cyan); }
+  .type-tag.deno { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.15); color: var(--text); }
+  .type-tag.bun { background: rgba(251,191,36,.1); border: 1px solid rgba(251,191,36,.3); color: var(--amber); }
+  .type-tag.java { background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.2); color: #e57373; }
+  .type-tag.php { background: rgba(167,139,250,.08); border: 1px solid rgba(167,139,250,.2); color: #9fa8da; }
+  .type-tag.ruby { background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.25); color: #ef5350; }
+  .type-tag.c { background: rgba(96,165,250,.08); border: 1px solid rgba(96,165,250,.2); color: #64b5f6; }
+
+  .venv-tag {
+    display: inline-block;
+    border-radius: 3px;
+    padding: 0 6px;
+    font-size: 10px;
+    font-weight: 500;
+    background: rgba(96,165,250,.1);
+    border: 1px solid rgba(96,165,250,.25);
+    color: var(--blue);
+  }
+  .venv-tag.system {
+    background: rgba(255,255,255,.03);
+    border-color: rgba(255,255,255,.1);
+    color: var(--text-dim);
+  }
 
   .port-tag {
     display: inline-block;
@@ -462,7 +494,7 @@
     <path d="M9.9 9.9l-.6-.6M14.7 14.7l-.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
     <path d="M14.1 9.9l.6-.6M9.3 14.7l.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
   </svg>
-  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.0.0</span></div>
+  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.1.0</span></div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
@@ -496,6 +528,14 @@
     <span style="display:flex;align-items:center;gap:6px;" onclick="event.stopPropagation()">
       <button class="btn filter-type node active" data-type="node" onclick="toggleTypeFilter('node')" style="padding:2px 8px;font-size:11px;"><img src="/icons/nodejs.svg" style="width:12px;height:12px;vertical-align:-1px;"> Node</button>
       <button class="btn filter-type python active" data-type="python" onclick="toggleTypeFilter('python')" style="padding:2px 8px;font-size:11px;"><img src="/icons/python.svg" style="width:12px;height:12px;vertical-align:-1px;"> Python</button>
+      <button class="btn filter-type rust active" data-type="rust" onclick="toggleTypeFilter('rust')" style="padding:2px 8px;font-size:11px;"><img src="/icons/rust.svg" style="width:12px;height:12px;vertical-align:-1px;"> Rust</button>
+      <button class="btn filter-type go active" data-type="go" onclick="toggleTypeFilter('go')" style="padding:2px 8px;font-size:11px;"><img src="/icons/go.svg" style="width:12px;height:12px;vertical-align:-1px;"> Go</button>
+      <button class="btn filter-type deno active" data-type="deno" onclick="toggleTypeFilter('deno')" style="padding:2px 8px;font-size:11px;"><img src="/icons/deno.svg" style="width:12px;height:12px;vertical-align:-1px;"> Deno</button>
+      <button class="btn filter-type bun active" data-type="bun" onclick="toggleTypeFilter('bun')" style="padding:2px 8px;font-size:11px;"><img src="/icons/bun.svg" style="width:12px;height:12px;vertical-align:-1px;"> Bun</button>
+      <button class="btn filter-type java active" data-type="java" onclick="toggleTypeFilter('java')" style="padding:2px 8px;font-size:11px;"><img src="/icons/java.svg" style="width:12px;height:12px;vertical-align:-1px;"> Java</button>
+      <button class="btn filter-type php active" data-type="php" onclick="toggleTypeFilter('php')" style="padding:2px 8px;font-size:11px;"><img src="/icons/php.svg" style="width:12px;height:12px;vertical-align:-1px;"> PHP</button>
+      <button class="btn filter-type ruby active" data-type="ruby" onclick="toggleTypeFilter('ruby')" style="padding:2px 8px;font-size:11px;"><img src="/icons/ruby.svg" style="width:12px;height:12px;vertical-align:-1px;"> Ruby</button>
+      <button class="btn filter-type c active" data-type="c" onclick="toggleTypeFilter('c')" style="padding:2px 8px;font-size:11px;">C/C++</button>
       <span id="proc-count"></span>
     </span>
   </div>
@@ -506,11 +546,12 @@
         <th class="sortable" onclick="sortProcs('pid',event)">PID</th>
         <th class="sortable" onclick="sortProcs('project',event)">PROJECT</th>
         <th>COMMAND</th>
+        <th>ENV</th>
         <th>PORTS</th>
         <th>DIRECTORY</th>
         <th></th>
       </tr></thead>
-      <tbody id="proc-body"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+      <tbody id="proc-body"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -663,7 +704,7 @@ function toggleSection(id) {
 }
 
 // ── Type filters ──
-const activeTypes = { node: true, python: true };
+const activeTypes = { node: true, python: true, rust: true, go: true, deno: true, bun: true, java: true, php: true, ruby: true, c: true };
 
 function toggleTypeFilter(type) {
   activeTypes[type] = !activeTypes[type];
@@ -695,6 +736,7 @@ const ICONS = {
   apache: '/icons/apache.svg',
   loki: '/icons/loki.svg',
   deno: '/icons/deno.svg',
+  bun: '/icons/bun.svg',
 };
 
 function typeTag(type) {
@@ -982,7 +1024,7 @@ function renderProcs(rows) {
   document.getElementById('proc-count').textContent = rows.length + ' found';
   const tbody = document.getElementById('proc-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty">No processes detected</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No processes detected</td></tr>';
     return;
   }
 
@@ -1001,6 +1043,7 @@ function renderProcs(rows) {
       <td class="pid">${r.pid}</td>
       <td class="project">${esc(r.project)}</td>
       <td class="cmd" title="${esc(r.cmd)}">${esc(r.cmd)}</td>
+      <td>${r.venv ? `<span class="venv-tag">${esc(r.venv)}</span>` : '<span class="venv-tag system">system</span>'}</td>
       <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">&mdash;</span>'}</td>
       <td class="dir" title="${esc(r.dir)}">${esc(r.dir)}</td>
       <td><button class="kill-btn" onclick="askKill(${r.pid},'${esc(r.project).replace(/'/g,"\\'")}')">kill</button></td>

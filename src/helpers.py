@@ -35,6 +35,26 @@ def docker_available():
         return False
 
 
+def get_venv(pid):
+    """Detect if a process runs inside a Python venv. Returns venv name or None."""
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            argv0 = f.read().split(b"\x00")[0].decode(errors="replace")
+        # If relative path, resolve via cwd
+        if not argv0.startswith("/"):
+            cwd = get_cwd(pid)
+            if cwd != "?":
+                argv0 = os.path.join(cwd, argv0)
+    except Exception:
+        return None
+    for marker in ("/.venv/", "/venv/", "/virtualenv/", "/.env/"):
+        if marker in argv0:
+            venv_idx = argv0.index(marker)
+            project_path = argv0[:venv_idx]
+            return os.path.basename(project_path)
+    return None
+
+
 def get_cwd(pid):
     try:
         return os.readlink(f"/proc/{pid}/cwd")
@@ -79,13 +99,39 @@ def get_ports_for_pid(pid):
 
 
 def classify_process(cmd_full):
-    """Return process type ('node' or 'python') or None."""
-    if re.search(r'(^|\s)(node|npm|npx)(\s|$)|node_modules/\.bin', cmd_full):
+    """Return process type or None."""
+    # Node.js
+    if re.search(r'(^|\s|/)(node|npm|npx)(\s|$)|node_modules/\.bin', cmd_full):
         return "node"
-    if re.search(r'(^|\s)python[23]?(\s|$)|\.py(\s|$)', cmd_full):
+    # Python
+    if re.search(r'(^|\s|/)python[23]?(\s|$)|\.py(\s|$)', cmd_full):
         if "server.py" in cmd_full:
             return None
         return "python"
+    # Rust (cargo commands or binaries in target/)
+    if re.search(r'(^|\s|/)cargo(\s|$)|/target/(debug|release)/', cmd_full):
+        return "rust"
+    # Go (go run/build/test or go tool)
+    if re.search(r'(^|\s|/)go(\s+)(run|build|test|install|vet)(\s|$)', cmd_full):
+        return "go"
+    # Deno
+    if re.search(r'(^|\s|/)deno(\s|$)', cmd_full):
+        return "deno"
+    # Bun
+    if re.search(r'(^|\s|/)bun(\s|$)', cmd_full):
+        return "bun"
+    # Java
+    if re.search(r'(^|\s|/)(java|mvn|gradle|mvnw|gradlew)(\s|$)', cmd_full):
+        return "java"
+    # PHP
+    if re.search(r'(^|\s|/)(php|composer)(\s|$)|\.php(\s|$)', cmd_full):
+        return "php"
+    # Ruby
+    if re.search(r'(^|\s|/)(ruby|rails|bundle|rake)(\s|$)|\.rb(\s|$)', cmd_full):
+        return "ruby"
+    # C/C++ (build tools and debugger)
+    if re.search(r'(^|\s|/)(gcc|g\+\+|make|cmake|gdb|clang|clang\+\+)(\s|$)', cmd_full):
+        return "c"
     return None
 
 
