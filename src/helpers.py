@@ -26,6 +26,25 @@ def run_cmd(cmd):
         return ""
 
 
+def spawn_detached(cmd):
+    """Launch cmd (a list) fire-and-forget, detached from the server process.
+
+    Returns True if spawned, False if the binary is missing. Does not wait, so a
+    GUI opener (file manager / editor) does not block the request.
+    """
+    try:
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return True
+    except (FileNotFoundError, OSError):
+        return False
+
+
 def is_in_container(pid):
     """Check if a PID runs inside a Docker container via /proc cgroup."""
     try:

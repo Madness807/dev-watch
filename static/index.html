@@ -252,6 +252,37 @@
     margin: 1px;
   }
   .no-port { color: var(--muted); font-size: 11px; }
+
+  /* Quick actions */
+  .port-open { cursor: pointer; transition: all .12s; }
+  .port-open:hover { background: rgba(74,222,128,.22); border-color: var(--green); text-decoration: underline; }
+  .port-copy {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 0 2px;
+    margin: 0 4px 0 1px;
+    transition: color .12s;
+  }
+  .port-copy:hover { color: var(--green); }
+  .opendir-btn {
+    background: transparent;
+    border: 1px solid rgba(96,165,250,.25);
+    border-radius: 5px;
+    color: rgba(96,165,250,.6);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all .15s;
+    margin-right: 4px;
+  }
+  .opendir-btn:hover { border-color: var(--blue); color: var(--blue); background: rgba(96,165,250,.08); }
+  .dir.copyable { cursor: pointer; }
+  .dir.copyable:hover { color: var(--cyan); }
   .version-tag {
     display: inline-block;
     border-radius: 3px;
@@ -497,7 +528,7 @@
     <path d="M9.9 9.9l-.6-.6M14.7 14.7l-.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
     <path d="M14.1 9.9l.6-.6M9.3 14.7l.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
   </svg>
-  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.3.0</span></div>
+  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.4.0</span></div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
@@ -976,6 +1007,39 @@ function timeoutSignal(ms) {
   return ctrl.signal;
 }
 
+// Copy to clipboard (Clipboard API on localhost is a secure context; textarea fallback otherwise).
+function copyText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  ta.remove();
+  return Promise.resolve();
+}
+
+// Small one-line toast for quick-action feedback.
+function flashToast(title, detail, type) {
+  showToast(title, '', detail ? [esc(detail)] : [], type || '');
+}
+
+// Monochrome copy glyph (inherits the button's color).
+const COPY_ICON = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" style="vertical-align:-1px;"><rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+// Port tags: click to open http://localhost:<port>, plus a copy-URL button. Shared by both tables.
+function portTags(ports) {
+  if (!ports || !ports.length) return '<span class="no-port">&mdash;</span>';
+  return ports.map(p =>
+    `<span class="port-tag port-open" data-port="${p}" title="Open http://localhost:${p}">:${p}</span>` +
+    `<button class="port-copy" data-port="${p}" title="Copy http://localhost:${p}">${COPY_ICON}</button>`
+  ).join('');
+}
+
 async function fetchData() {
   try {
     setStatus('fetch...', 'idle');
@@ -1068,9 +1132,12 @@ function renderProcs(rows) {
       <td class="project">${esc(r.project)}</td>
       <td class="cmd" title="${esc(r.cmd)}">${esc(r.cmd)}</td>
       <td>${r.venv ? `<span class="venv-tag">${esc(r.venv)}</span>` : '<span class="venv-tag system">system</span>'}</td>
-      <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">&mdash;</span>'}</td>
-      <td class="dir" title="${esc(r.dir)}">${esc(r.dir)}</td>
-      <td><button class="kill-btn" data-pid="${r.pid}" data-project="${esc(r.project)}">kill</button></td>
+      <td>${portTags(r.ports)}</td>
+      <td class="dir copyable" data-path="${esc(r.dir_full)}" title="${esc(r.dir)} — click to copy">${esc(r.dir)}</td>
+      <td>
+        <button class="opendir-btn" data-path="${esc(r.dir_full)}" title="Open folder (${esc(r.dir)})">dir</button>
+        <button class="kill-btn" data-pid="${r.pid}" data-project="${esc(r.project)}">kill</button>
+      </td>
     </tr>
   `).join('');
 }
@@ -1244,7 +1311,7 @@ function renderPorts(rows) {
   }
   tbody.innerHTML = filtered.map(r => `
     <tr>
-      <td><span class="port-tag">:${r.port}</span></td>
+      <td>${portTags([r.port])}</td>
       <td class="project">${esc(r.process)}</td>
       <td class="pid">${r.pid || ''}</td>
       <td><span class="bind-tag ${r.bind}">${r.bind === 'all' ? '0.0.0.0' : '127.0.0.1'}</span></td>
@@ -1339,10 +1406,45 @@ function applyWatch() {
   }
 }
 
+// ── Quick actions ──
+function openUrl(port) { window.open('http://localhost:' + port, '_blank', 'noopener'); }
+function copyUrl(port) { const u = 'http://localhost:' + port; copyText(u).then(() => flashToast('Copied', u, '')); }
+function copyPath(path) { copyText(path).then(() => flashToast('Copied', path, '')); }
+
+async function openDir(path) {
+  try {
+    const res = await fetch(apiBase() + '/api/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok) flashToast('Folder opened', path, '');
+    else flashToast('Open failed', json.error || ('HTTP ' + res.status), 'warn');
+  } catch (e) {
+    flashToast('Open failed', e.message, 'danger');
+  }
+}
+
 // ── Event delegation (no inline handlers built from process/container data) ──
 document.getElementById('proc-body').addEventListener('click', e => {
-  const btn = e.target.closest('.kill-btn');
-  if (btn) askKill(Number(btn.dataset.pid), btn.dataset.project);
+  const kill = e.target.closest('.kill-btn');
+  if (kill) { askKill(Number(kill.dataset.pid), kill.dataset.project); return; }
+  const opendir = e.target.closest('.opendir-btn');
+  if (opendir) { openDir(opendir.dataset.path); return; }
+  const portOpen = e.target.closest('.port-open');
+  if (portOpen) { openUrl(portOpen.dataset.port); return; }
+  const portCopy = e.target.closest('.port-copy');
+  if (portCopy) { copyUrl(portCopy.dataset.port); return; }
+  const dir = e.target.closest('.dir.copyable');
+  if (dir) { copyPath(dir.dataset.path); return; }
+});
+
+document.getElementById('port-body').addEventListener('click', e => {
+  const portOpen = e.target.closest('.port-open');
+  if (portOpen) { openUrl(portOpen.dataset.port); return; }
+  const portCopy = e.target.closest('.port-copy');
+  if (portCopy) { copyUrl(portCopy.dataset.port); return; }
 });
 
 document.getElementById('docker-body').addEventListener('click', e => {

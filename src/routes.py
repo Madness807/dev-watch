@@ -6,17 +6,19 @@ import signal
 import json
 import time
 from flask import jsonify, request
-from src.config import PORT
+from src.config import PORT, OPEN_CMD
 from src.helpers import (
     run_cmd, is_in_container, docker_available, get_cwd, get_cmdline, get_venv,
     get_project_name, get_listening_ports, ports_by_pid, first_pid_and_name,
     classify_process, is_native_binary, get_cpu_usage, get_ram_usage,
-    get_disk_usage, get_gpu_usage, get_proc_ticks, proc_cpu_percents, MAX_CMD_LEN,
+    get_disk_usage, get_gpu_usage, get_proc_ticks, proc_cpu_percents,
+    spawn_detached, MAX_CMD_LEN,
 )
 
-# Allowlists: only PIDs/containers seen by the last scan can be acted upon
+# Allowlists: only PIDs/containers/dirs seen by the last scan can be acted upon
 known_pids = set()
 known_container_ids = set()
+known_dirs = set()
 
 # CPU state for delta calculation (mutable container for closure access)
 _cpu_state = {"prev": None}
@@ -108,6 +110,7 @@ def register_routes(app):
                 "cmd": cmdline[:MAX_CMD_LEN],
                 "ports": port_map.get(pid, []),
                 "dir": display_cwd,
+                "dir_full": cwd,
                 "venv": get_venv(pid),
                 "mem_mb": mem_mb,
                 "mem_pct": mem_pct,
@@ -125,6 +128,8 @@ def register_routes(app):
         processes.sort(key=lambda x: x["type"])
         known_pids.clear()
         known_pids.update(p["pid"] for p in processes)
+        known_dirs.clear()
+        known_dirs.update(p["dir_full"] for p in processes if p["dir_full"] != "?")
         return jsonify(processes)
 
     @app.route("/api/docker")
@@ -238,6 +243,21 @@ def register_routes(app):
             return jsonify({"error": "Process not found"}), 404
         except PermissionError:
             return jsonify({"error": "Permission denied"}), 403
+
+    @app.route("/api/open", methods=["POST"])
+    def api_open():
+        data = request.get_json(silent=True)
+        path = data.get("path") if data else None
+        if not path or not isinstance(path, str):
+            return jsonify({"error": "Invalid path"}), 400
+        # Only directories surfaced by the last scan may be opened.
+        if path not in known_dirs:
+            return jsonify({"error": "Directory not recognized"}), 403
+        if not os.path.isdir(path):
+            return jsonify({"error": "Directory not found"}), 404
+        if spawn_detached([OPEN_CMD, path]):
+            return jsonify({"ok": True, "path": path})
+        return jsonify({"error": f"'{OPEN_CMD}' not found; set DEV_WATCH_OPEN_CMD"}), 500
 
     @app.route("/api/ports")
     def api_ports():

@@ -16,12 +16,12 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clean_allowlists():
-    """Isolate the module-global PID/container allowlists between tests."""
-    routes.known_pids.clear()
-    routes.known_container_ids.clear()
+    """Isolate the module-global PID/container/dir allowlists between tests."""
+    for s in (routes.known_pids, routes.known_container_ids, routes.known_dirs):
+        s.clear()
     yield
-    routes.known_pids.clear()
-    routes.known_container_ids.clear()
+    for s in (routes.known_pids, routes.known_container_ids, routes.known_dirs):
+        s.clear()
 
 
 # ── Health ──
@@ -54,7 +54,7 @@ def test_ps_returns_list(client):
 def test_ps_entries_have_required_fields(client):
     res = client.get("/api/ps")
     data = res.get_json()
-    required = {"pid", "type", "project", "cmd", "ports", "dir", "cpu", "mem_mb", "mem_pct"}
+    required = {"pid", "type", "project", "cmd", "ports", "dir", "dir_full", "cpu", "mem_mb", "mem_pct"}
     for proc in data:
         assert required.issubset(proc.keys()), f"Missing fields in {proc}"
         assert proc["type"] in ("node", "python", "rust", "go", "deno", "bun", "java", "php", "ruby", "c", "native")
@@ -334,3 +334,43 @@ def test_ps_hermetic_parsing(client, monkeypatch):
     assert procs[4242]["mem_pct"] == 0.2      # %MEM column from ps_out
     assert procs[4242]["cpu"] == 0.0
     assert "mem_mb" in procs[4242]
+    # dir_full (absolute path) is exposed and allowlisted for /api/open
+    assert procs[4242]["dir_full"] == f"{home}/x/app"
+    assert f"{home}/x/app" in routes.known_dirs
+
+
+# ── Open directory (guarded, allowlist) ──
+
+def test_open_rejects_invalid_path(client):
+    assert client.post("/api/open", json={}).status_code == 400
+    assert client.post("/api/open", json={"path": 123}).status_code == 400
+
+
+def test_open_rejects_unknown_dir(client, tmp_path):
+    # exists on disk but was not surfaced by a scan
+    res = client.post("/api/open", json={"path": str(tmp_path)})
+    assert res.status_code == 403
+
+
+def test_open_success(client, tmp_path, monkeypatch):
+    from src.config import OPEN_CMD
+    routes.known_dirs.add(str(tmp_path))
+    calls = []
+    monkeypatch.setattr(routes, "spawn_detached", lambda cmd: calls.append(cmd) or True)
+    res = client.post("/api/open", json={"path": str(tmp_path)})
+    assert res.status_code == 200
+    assert res.get_json()["ok"]
+    assert calls == [[OPEN_CMD, str(tmp_path)]]   # no shell, exact argv
+
+
+def test_open_missing_dir_returns_404(client):
+    routes.known_dirs.add("/scanned/but/gone")   # allowlisted yet not a real dir
+    res = client.post("/api/open", json={"path": "/scanned/but/gone"})
+    assert res.status_code == 404
+
+
+def test_open_spawn_failure_returns_500(client, tmp_path, monkeypatch):
+    routes.known_dirs.add(str(tmp_path))
+    monkeypatch.setattr(routes, "spawn_detached", lambda cmd: False)  # opener binary missing
+    res = client.post("/api/open", json={"path": str(tmp_path)})
+    assert res.status_code == 500

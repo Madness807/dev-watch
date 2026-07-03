@@ -5,7 +5,7 @@
 <h1 align="center">DEV WATCH</h1>
 
 <p align="center">
-  <strong>v1.3.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+  <strong>v1.4.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 </p>
 
 <!-- Screenshot will be added in a future update -->
@@ -56,6 +56,7 @@
 - Quick filter buttons by type (11 types)
 - Sortable columns (type, PID, CPU, MEM, project)
 - Kill button (SIGTERM)
+- **Quick actions**: click a port to open `http://localhost:<port>` in your browser, copy its URL (`⧉`), copy the project path (click the directory), or open the project folder (`dir` button — see `DEV_WATCH_OPEN_CMD` below)
 
 > [!NOTE]
 > **Compiled binaries**: Interpreted languages (Node, Python, Ruby, etc.) are identified by their interpreter in the command line. Compiled binaries (`./my-app`) have no such marker, so they are detected as `native` if the executable is an ELF binary located in your home directory.
@@ -70,7 +71,7 @@
 - Restart / stop buttons
 
 ### Network
-- **Listening Ports (TCP)**: full machine scan, not just Node/Python
+- **Listening Ports (TCP)**: full machine scan, not just Node/Python — click a port to open it in the browser or copy its URL
 - **Active Connections (TCP)**: all ESTABLISHED connections with process and PID
 - Bind indicator: green (127.0.0.1) vs red (0.0.0.0)
 
@@ -123,6 +124,12 @@ Press `Ctrl+C` to stop.
 # To remove
 ./start.sh uninstall
 ```
+
+## Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DEV_WATCH_OPEN_CMD` | `xdg-open` | Command used by the `dir` button (`POST /api/open`) to open a project folder. Set to your editor or platform opener, e.g. `code` (VS Code), `wslview` or `explorer.exe` (WSL). |
 
 ## Security
 
@@ -185,6 +192,7 @@ dev-watch/
 | `/api/connections` | GET | Active TCP connections (ESTABLISHED) |
 | `/api/system` | GET | CPU, RAM, disk, GPU |
 | `/api/kill` | POST | Kill process (`{"pid": 1234}`) — allowlist only |
+| `/api/open` | POST | Open a project folder (`{"path": "/home/..."}`) — allowlist only |
 | `/api/docker/stop` | POST | Stop container (`{"id": "abc123"}`) — allowlist only |
 | `/api/docker/restart` | POST | Restart container (`{"id": "abc123"}`) — allowlist only |
 | `/api/health` | GET | Health check |
