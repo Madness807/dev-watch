@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-07-04
+
+### Fixed
+- Process/container lifecycle toasts no longer flap. The scan is an instantaneous `ps` snapshot,
+  so any short-lived command run from a directory under `~` (editor hooks, one-off scripts, CLI
+  tools) showed up in exactly one scan; the notification diff, keyed on raw PID sets between two
+  polls, then fired an endless "New process" / "Process terminated" toast pair on every refresh.
+  Appearance and disappearance are now debounced: an item must be seen (or missed) on 2
+  consecutive scans before it is announced — processes and containers alike. Trade-off: lifecycle
+  toasts arrive one poll interval later.
+
 ## [1.6.0] - 2026-07-03
 
 ### Added

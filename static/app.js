@@ -116,8 +116,54 @@ function sortProcs(key, e) {
 }
 
 // ── Notifications ──
-let prevProcs = {};       // pid → {project, cmd, type, ports}
-let prevContainers = {};  // id → {name, image, health, project}
+// Presence debounce: an item must be seen on N consecutive scans before "appeared"
+// fires, and missed on N consecutive scans before "disappeared" fires. The scan is
+// an instantaneous ps snapshot, so a short-lived command (one-off script, editor
+// hook, CLI tool run from a project dir) shows up in exactly one scan — announcing
+// it would flood the page with New process / Process terminated toast pairs.
+const PRESENCE_SCANS = 2;
+
+const procTracker = { seeded: false, items: {} };       // pid → {info, confirmed, seen, misses}
+const containerTracker = { seeded: false, items: {} };  // id → {info, confirmed, seen, misses}
+let prevHealth = {};                                     // id → health (unhealthy/recovered transitions)
+
+// Diff `current` (key → info) against the tracker; returns debounced lifecycle events.
+function trackPresence(tracker, current) {
+  const appeared = [], disappeared = [];
+  if (!tracker.seeded) {
+    // First scan: adopt everything silently — nothing to compare against.
+    tracker.seeded = true;
+    Object.keys(current).forEach(k => {
+      tracker.items[k] = { info: current[k], confirmed: true, seen: 1, misses: 0 };
+    });
+    return { appeared, disappeared };
+  }
+  Object.keys(current).forEach(k => {
+    const it = tracker.items[k];
+    if (!it) {
+      tracker.items[k] = { info: current[k], confirmed: false, seen: 1, misses: 0 };
+      return;
+    }
+    it.info = current[k];
+    it.misses = 0;
+    it.seen++;
+    if (!it.confirmed && it.seen >= PRESENCE_SCANS) {
+      it.confirmed = true;
+      appeared.push(it.info);
+    }
+  });
+  Object.keys(tracker.items).forEach(k => {
+    if (current[k] !== undefined) return;
+    const it = tracker.items[k];
+    if (!it.confirmed) { delete tracker.items[k]; return; }  // never announced → drop silently
+    it.misses++;
+    if (it.misses >= PRESENCE_SCANS) {
+      disappeared.push(it.info);
+      delete tracker.items[k];
+    }
+  });
+  return { appeared, disappeared };
+}
 
 function toastLine(label, value) {
   return `<div class="toast-line"><span class="toast-label">${esc(label)}</span><span class="toast-value">${esc(value)}</span></div>`;
@@ -167,61 +213,45 @@ function notify(title, icon, lines, type) {
 }
 
 function checkNotifications(newProcs, newDocker) {
-  const newPids = new Set(newProcs.map(r => r.pid));
+  const procsNow = {};
+  newProcs.forEach(r => { procsNow[r.pid] = r; });
+  const procDiff = trackPresence(procTracker, procsNow);
 
-  // process died
-  if (Object.keys(prevProcs).length > 0) {
-    Object.keys(prevProcs).forEach(pid => {
-      if (!newPids.has(Number(pid))) {
-        const p = prevProcs[pid];
-        notify('Process terminated', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#f87171" stroke-width="2"/><path d="M8 8l8 8M16 8l-8 8" stroke="#f87171" stroke-width="2" stroke-linecap="round"/></svg>', [
-          toastLine('Project', p.project),
-          toastLine('PID', pid),
-          toastLine('Type', p.type),
-          toastLine('Cmd', p.cmd),
-        ], 'danger');
-      }
-    });
-  }
+  procDiff.disappeared.forEach(p => {
+    notify('Process terminated', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#f87171" stroke-width="2"/><path d="M8 8l8 8M16 8l-8 8" stroke="#f87171" stroke-width="2" stroke-linecap="round"/></svg>', [
+      toastLine('Project', p.project),
+      toastLine('PID', String(p.pid)),
+      toastLine('Type', p.type),
+      toastLine('Cmd', p.cmd),
+    ], 'danger');
+  });
 
-  // new process appeared
-  if (Object.keys(prevProcs).length > 0) {
-    newProcs.forEach(r => {
-      if (!prevProcs[r.pid]) {
-        notify('New process', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#4ade80" stroke-width="2"/><path d="M8 12h8M12 8v8" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/></svg>', [
-          toastLine('Project', r.project),
-          toastLine('PID', String(r.pid)),
-          toastLine('Type', r.type),
-          toastLine('Cmd', r.cmd),
-        ], '');
-      }
-    });
-  }
+  procDiff.appeared.forEach(r => {
+    notify('New process', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#4ade80" stroke-width="2"/><path d="M8 12h8M12 8v8" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/></svg>', [
+      toastLine('Project', r.project),
+      toastLine('PID', String(r.pid)),
+      toastLine('Type', r.type),
+      toastLine('Cmd', r.cmd),
+    ], '');
+  });
 
-  prevProcs = {};
-  newProcs.forEach(r => { prevProcs[r.pid] = { project: r.project, cmd: r.cmd, type: r.type }; });
+  const containersNow = {};
+  newDocker.forEach(r => { containersNow[r.id] = r; });
+  const dockerDiff = trackPresence(containerTracker, containersNow);
 
-  const newDockerIds = new Set(newDocker.map(r => r.id));
-
-  // container stopped
-  if (Object.keys(prevContainers).length > 0) {
-    Object.keys(prevContainers).forEach(id => {
-      if (!newDockerIds.has(id)) {
-        const c = prevContainers[id];
-        notify('Container stopped', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="#f87171" stroke-width="2"/><rect x="8" y="8" width="8" height="8" fill="#f87171"/></svg>', [
-          toastLine('Name', c.name),
-          toastLine('Image', c.image),
-          toastLine('Project', c.project || 'standalone'),
-        ], 'danger');
-      }
-    });
-  }
+  dockerDiff.disappeared.forEach(c => {
+    notify('Container stopped', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="3" stroke="#f87171" stroke-width="2"/><rect x="8" y="8" width="8" height="8" fill="#f87171"/></svg>', [
+      toastLine('Name', c.name),
+      toastLine('Image', c.image),
+      toastLine('Project', c.project || 'standalone'),
+    ], 'danger');
+  });
 
   // container went unhealthy (skip on the very first scan — nothing to compare against)
-  const hadContainers = Object.keys(prevContainers).length > 0;
+  const hadContainers = Object.keys(prevHealth).length > 0;
   newDocker.forEach(r => {
-    const prev = prevContainers[r.id];
-    if (hadContainers && r.health === 'unhealthy' && (!prev || prev.health !== 'unhealthy')) {
+    const prev = prevHealth[r.id];
+    if (hadContainers && r.health === 'unhealthy' && prev !== 'unhealthy') {
       notify('Container unhealthy', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22h20L12 2z" stroke="#fbbf24" stroke-width="2" fill="none"/><path d="M12 10v4M12 17v1" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/></svg>', [
         toastLine('Name', r.name),
         toastLine('Image', r.image),
@@ -232,8 +262,7 @@ function checkNotifications(newProcs, newDocker) {
 
   // container recovered
   newDocker.forEach(r => {
-    const prev = prevContainers[r.id];
-    if (r.health === 'healthy' && prev && prev.health === 'unhealthy') {
+    if (r.health === 'healthy' && prevHealth[r.id] === 'unhealthy') {
       notify('Container recovered', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#4ade80" stroke-width="2"/><path d="M8 12l3 3 5-6" stroke="#4ade80" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>', [
         toastLine('Name', r.name),
         toastLine('Image', r.image),
@@ -241,8 +270,8 @@ function checkNotifications(newProcs, newDocker) {
     }
   });
 
-  prevContainers = {};
-  newDocker.forEach(r => { prevContainers[r.id] = { name: r.name, image: r.image, health: r.health, project: r.project }; });
+  prevHealth = {};
+  newDocker.forEach(r => { prevHealth[r.id] = r.health; });
 }
 
 // ── Core ──
