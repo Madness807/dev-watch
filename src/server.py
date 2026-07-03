@@ -6,17 +6,20 @@ Dashboard: http://localhost:3999
 """
 
 import os
+import signal
+import sys
 import logging
 from flask import Flask, send_from_directory
-from flask_cors import CORS
+from src.config import HOST, PORT
 from src.routes import register_routes
 
-PORT = 3999
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
+# No CORS: the dashboard is served by this same Flask app (same origin), so no
+# cross-origin access is ever needed. Adding a permissive/misconfigured CORS
+# policy would only widen the attack surface of an auth-less local API.
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:*", "http://127.0.0.1:*"])
 
 
 @app.route("/")
@@ -32,8 +35,14 @@ def serve_icon(filename):
 register_routes(app)
 
 
+def _graceful_exit(signum, frame):
+    """Exit cleanly on SIGTERM so `systemctl stop` shuts the server down."""
+    sys.exit(0)
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, _graceful_exit)
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
     print(f"\n  dev-watch at http://localhost:{PORT}")
-    print(f"  Ctrl+C to stop\n")
-    app.run(host="127.0.0.1", port=PORT, debug=False)
+    print("  Ctrl+C to stop\n")
+    app.run(host=HOST, port=PORT, debug=False)

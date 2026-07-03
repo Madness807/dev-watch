@@ -5,6 +5,44 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-07-03
+
+### Security
+- **CORS**: removed `flask-cors`. The pattern `http://localhost:*` was interpreted as a start-anchored
+  regex and accepted **any** origin beginning with `http://localhost` / `http://127.0.0.1`
+  (e.g. `http://localhostevil.com`, `http://localhost.evil.com`), letting a malicious page read the
+  API and POST to `/api/kill` and the Docker actions. The dashboard is same-origin, so no CORS layer
+  is needed.
+- **XSS**: `esc()` now escapes quotes, and process/container data is passed to actions via `data-*`
+  attributes with delegated listeners instead of inline `onclick`/`title` strings, closing an
+  attribute-injection DOM XSS in the command, directory, project-name and compose-label fields.
+- `start.sh install` refuses to run as root (`User=root` service); systemd unit adds
+  `NoNewPrivileges=true` and `PrivateTmp=true`.
+- `/api/kill` now rejects `bool` PIDs explicitly.
+
+### Fixed
+- Versioned Python interpreters (`python3.11`, `python3.12`, …) are now classified as `python`
+  instead of disappearing from `/api/ps`.
+- `start.sh` no longer aborts under `set -e` when `xdg-open` is missing (headless/WSL); the server
+  is no longer orphaned and `Ctrl+C` works.
+- `run_cmd` / `docker_available` now use a subprocess timeout so a wedged `ss`/`ps`/`docker` cannot
+  leak worker threads and child processes indefinitely.
+- Listening ports bound to a specific routable IP are now shown (and flagged as exposed) instead of
+  being dropped; all PIDs on a shared socket are captured.
+- Multi-GPU hosts no longer make `/api/system` return a null GPU block.
+- `cwd` prefix checks use a path separator (a sibling dir like `/home/user-evil` no longer matches).
+- First dashboard load no longer fires a spurious "Container unhealthy" toast/sound.
+- `AbortSignal.timeout()` has a fallback for older browsers.
+
+### Changed
+- `/api/ps` runs a single `ss` scan instead of one per process (removes an N+1).
+- Dependencies split: `requirements.txt` (runtime: flask) and `requirements-dev.txt` (pytest).
+- Shared `HOST`/`PORT` constants in `src/config.py` (no more hardcoded `3999` in `/api/health`).
+
+### Tests
+- Added `tests/test_helpers.py` and hermetic (mocked `ps`/`ss`/`docker`) endpoint tests, plus the
+  `/api/kill` and Docker-action happy paths and error branches. Suite: 22 → 67 tests.
+
 ## [1.2.0] - 2026-03-27
 
 ### Added

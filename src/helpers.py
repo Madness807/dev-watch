@@ -6,13 +6,23 @@ import re
 import json
 
 MAX_CMD_LEN = 120
+CMD_TIMEOUT = 5  # seconds; bounds a wedged external binary (ss/ps/docker)
+
+_EMPTY_USAGE = {"used": 0, "total": 0, "pct": 0}
 
 
 def run_cmd(cmd):
-    """Run a command safely without shell=True. cmd is a list."""
+    """Run a command safely without shell=True. cmd is a list.
+
+    Returns the command's stdout, or "" on failure/timeout. A timeout guards
+    against a hung external binary (e.g. docker while the daemon restarts)
+    permanently blocking a worker thread and leaking child processes.
+    """
     try:
-        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
-    except (subprocess.CalledProcessError, FileNotFoundError):
+        return subprocess.check_output(
+            cmd, stderr=subprocess.DEVNULL, text=True, timeout=CMD_TIMEOUT
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return ""
 
 
@@ -29,9 +39,11 @@ def is_in_container(pid):
 def docker_available():
     """Check if Docker daemon is reachable."""
     try:
-        subprocess.check_output(["docker", "info"], stderr=subprocess.DEVNULL, text=True)
+        subprocess.check_output(
+            ["docker", "info"], stderr=subprocess.DEVNULL, text=True, timeout=CMD_TIMEOUT
+        )
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return False
 
 
@@ -47,11 +59,11 @@ def get_venv(pid):
                 argv0 = os.path.join(cwd, argv0)
     except Exception:
         return None
-    for marker in ("/.venv/", "/venv/", "/virtualenv/", "/.env/"):
+    for marker in ("/.venv/", "/venv/", "/virtualenv/"):
         if marker in argv0:
             venv_idx = argv0.index(marker)
             project_path = argv0[:venv_idx]
-            return os.path.basename(project_path)
+            return os.path.basename(project_path) or None
     return None
 
 
@@ -87,15 +99,59 @@ def get_project_name(cwd, proc_type):
     return os.path.basename(cwd) if cwd != "?" else "?"
 
 
-def get_ports_for_pid(pid):
-    ports = []
-    out = run_cmd(["ss", "-tlnp"])
-    for line in out.splitlines():
-        if f"pid={pid}," in line:
-            m = re.search(r'(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|\[::1\]|\*):(\d+)', line)
-            if m:
-                ports.append(int(m.group(1)))
-    return list(set(ports))
+# ── Listening ports (single `ss -tlnp` scan, shared by /api/ps and /api/ports) ──
+
+# host:port at the local-address column — captures 0.0.0.0, 127.0.0.1, [::],
+# [::1], * and specific routable IPs (previously only wildcard/loopback matched).
+_LOCAL_ADDR_RE = re.compile(r'^(.*):(\d+)$')
+_PID_RE = re.compile(r'pid=(\d+)')
+_PROC_NAME_RE = re.compile(r'\("([^"]+)"')
+
+
+def parse_listening_ports(out):
+    """Parse `ss -tlnp` output into records: {port, pids, process, bind}."""
+    records = []
+    for line in out.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        m = _LOCAL_ADDR_RE.match(parts[3])  # Local Address:Port column
+        if not m:
+            continue
+        host, port = m.group(1), int(m.group(2))
+        is_local = host in ("127.0.0.1", "[::1]") or host.startswith("127.")
+        pids = [int(p) for p in _PID_RE.findall(line)]
+        name_m = _PROC_NAME_RE.search(line)
+        records.append({
+            "port": port,
+            "pids": pids,
+            "process": name_m.group(1) if name_m else "",
+            "bind": "local" if is_local else "all",
+        })
+    return records
+
+
+def get_listening_ports():
+    return parse_listening_ports(run_cmd(["ss", "-tlnp"]))
+
+
+def ports_by_pid(records):
+    """Map pid -> sorted list of listening ports, from parsed records."""
+    mapping = {}
+    for r in records:
+        for pid in r["pids"]:
+            mapping.setdefault(pid, set()).add(r["port"])
+    return {pid: sorted(ports) for pid, ports in mapping.items()}
+
+
+def first_pid_and_name(line):
+    """Extract the first (pid, process_name) from an `ss` line, or (None, "")."""
+    pid_m = _PID_RE.search(line)
+    name_m = _PROC_NAME_RE.search(line)
+    return (
+        int(pid_m.group(1)) if pid_m else None,
+        name_m.group(1) if name_m else "",
+    )
 
 
 def classify_process(cmd_full):
@@ -103,8 +159,8 @@ def classify_process(cmd_full):
     # Node.js
     if re.search(r'(^|\s|/)(node|npm|npx)(\s|$)|node_modules/\.bin', cmd_full):
         return "node"
-    # Python
-    if re.search(r'(^|\s|/)python[23]?(\s|$)|\.py(\s|$)', cmd_full):
+    # Python (incl. versioned interpreters: python3.11, python3.12, ...)
+    if re.search(r'(^|\s|/)python(\d+(\.\d+)?)?(\s|$)|\.py(\s|$)', cmd_full):
         if "server.py" in cmd_full:
             return None
         return "python"
@@ -142,7 +198,7 @@ def is_native_binary(pid):
     except Exception:
         return False
     home = os.path.expanduser("~")
-    if not exe.startswith(home):
+    if not (exe == home or exe.startswith(home + os.sep)):
         return False
     # Check ELF magic bytes
     try:
@@ -184,7 +240,7 @@ def get_ram_usage():
         used_mb = total_mb - avail_mb
         return {"used": round(used_mb), "total": round(total_mb), "pct": round(used_mb / total_mb * 100, 1) if total_mb > 0 else 0}
     except Exception:
-        return {"used": 0, "total": 0, "pct": 0}
+        return dict(_EMPTY_USAGE)
 
 
 def get_disk_usage():
@@ -195,14 +251,15 @@ def get_disk_usage():
         used_gb = total_gb - free_gb
         return {"used": round(used_gb, 1), "total": round(total_gb, 1), "pct": round(used_gb / total_gb * 100, 1) if total_gb > 0 else 0}
     except Exception:
-        return {"used": 0, "total": 0, "pct": 0}
+        return dict(_EMPTY_USAGE)
 
 
 def get_gpu_usage():
     out = run_cmd(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader,nounits"])
     if out.strip():
         try:
-            parts = out.strip().split(",")
+            # First GPU only (multi-GPU hosts print one line per device).
+            parts = out.strip().splitlines()[0].split(",")
             return {"pct": round(float(parts[0].strip()), 1), "vram_used": round(float(parts[1].strip())), "vram_total": round(float(parts[2].strip()))}
         except Exception:
             return None

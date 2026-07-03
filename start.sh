@@ -3,11 +3,32 @@ set -e
 cd "$(dirname "$0")"
 PROJECT_DIR="$(pwd)"
 
+# ── Helpers ──
+
+ensure_venv() {
+  # Rebuild if missing/broken, then keep deps in sync (no-op when satisfied).
+  if [ ! -x .venv/bin/python3 ]; then
+    echo "Creating virtual environment..."
+    rm -rf .venv
+    python3 -m venv .venv
+  fi
+  .venv/bin/pip install -q -r requirements.txt
+}
+
 # ── Commands ──
 
 install_service() {
+  TARGET_USER="${SUDO_USER:-$(whoami)}"
+  if [ "$TARGET_USER" = "root" ]; then
+    echo "Refusing to install: dev-watch must not run as root." >&2
+    echo "Run './start.sh install' as your normal user (it calls sudo itself)." >&2
+    exit 1
+  fi
+
+  ensure_venv
+
   echo "Generating systemd service..."
-  sed "s|__USER__|$(whoami)|g; s|__PATH__|${PROJECT_DIR}|g" \
+  sed "s|__USER__|${TARGET_USER}|g; s|__PATH__|${PROJECT_DIR}|g" \
     dev-watch.service > /tmp/dev-watch.service
 
   echo "Installing service (requires sudo)..."
@@ -22,8 +43,8 @@ install_service() {
 
 uninstall_service() {
   echo "Removing service (requires sudo)..."
-  sudo systemctl stop dev-watch 2>/dev/null
-  sudo systemctl disable dev-watch 2>/dev/null
+  sudo systemctl stop dev-watch 2>/dev/null || true
+  sudo systemctl disable dev-watch 2>/dev/null || true
   sudo rm -f /etc/systemd/system/dev-watch.service
   sudo systemctl daemon-reload
   echo "dev-watch service removed."
@@ -51,17 +72,18 @@ esac
 
 # ── Default: start server ──
 
-# Create venv if it doesn't exist
-if [ ! -d ".venv" ]; then
-  echo "Creating virtual environment..."
-  python3 -m venv .venv
-  .venv/bin/pip install -q -r requirements.txt
-  echo "Dependencies installed."
+# Don't fight the systemd-managed instance (a manual SIGTERM looks like a clean
+# exit to systemd, so Restart=on-failure would NOT bring it back).
+if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet dev-watch; then
+  echo "dev-watch is running as a systemd service."
+  echo "Stop it first with: sudo systemctl stop dev-watch"
+  exit 1
 fi
 
-# Kill previous server if running
-pkill -f "python3.*src/server.py" 2>/dev/null || true
-pkill -f "python3.*src.server" 2>/dev/null || true
+ensure_venv
+
+# Stop a previous manual instance (anchored so we don't kill unrelated python procs)
+pkill -f -- '-m src\.server' 2>/dev/null || true
 
 # Start server using venv Python
 .venv/bin/python3 -m src.server &
@@ -73,8 +95,8 @@ for i in {1..10}; do
   sleep 0.3
 done
 
-# Open dashboard in browser
-xdg-open "http://localhost:3999" 2>/dev/null
+# Open dashboard in browser (best-effort; never abort the launcher)
+command -v xdg-open >/dev/null 2>&1 && xdg-open "http://localhost:3999" >/dev/null 2>&1 || true
 
 echo "dev-watch started (PID: $SERVER_PID)"
 echo "Ctrl+C to stop"

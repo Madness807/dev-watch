@@ -496,7 +496,7 @@
     <path d="M9.9 9.9l-.6-.6M14.7 14.7l-.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
     <path d="M14.1 9.9l.6-.6M9.3 14.7l.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
   </svg>
-  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.1.0</span></div>
+  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.2.1</span></div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
@@ -656,7 +656,7 @@
     <h3>What is protected</h3>
     <ul>
       <li>Server bound to <strong>127.0.0.1</strong> only</li>
-      <li>CORS restricted to localhost origins</li>
+      <li>Same-origin only (dashboard served by Flask; no CORS layer, so cross-origin pages cannot read the API)</li>
       <li>PID allowlist: only scanned processes can be killed</li>
       <li>Docker allowlist: only scanned containers can be stopped/restarted</li>
       <li>No shell=True in system commands</li>
@@ -890,7 +890,7 @@ function checkNotifications(newProcs, newDocker) {
   }
 
   prevProcs = {};
-  newProcs.forEach(r => { prevProcs[r.pid] = { project: r.project, cmd: r.cmd, type: r.type, ports: r.ports }; });
+  newProcs.forEach(r => { prevProcs[r.pid] = { project: r.project, cmd: r.cmd, type: r.type }; });
 
   const newDockerIds = new Set(newDocker.map(r => r.id));
 
@@ -908,10 +908,11 @@ function checkNotifications(newProcs, newDocker) {
     });
   }
 
-  // container went unhealthy
+  // container went unhealthy (skip on the very first scan — nothing to compare against)
+  const hadContainers = Object.keys(prevContainers).length > 0;
   newDocker.forEach(r => {
     const prev = prevContainers[r.id];
-    if (r.health === 'unhealthy' && (!prev || prev.health !== 'unhealthy')) {
+    if (hadContainers && r.health === 'unhealthy' && (!prev || prev.health !== 'unhealthy')) {
       notify('Container unhealthy', '<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 22h20L12 2z" stroke="#fbbf24" stroke-width="2" fill="none"/><path d="M12 10v4M12 17v1" stroke="#fbbf24" stroke-width="2" stroke-linecap="round"/></svg>', [
         toastLine('Name', r.name),
         toastLine('Image', r.image),
@@ -951,21 +952,36 @@ function showError(msg) {
   setTimeout(() => el.classList.remove('show'), 5000);
 }
 
+// Escape for HTML text AND attribute contexts (quotes included, so values
+// interpolated into title="..." / data-*="..." cannot break out of the attribute).
 function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// AbortSignal.timeout() fallback for older browsers.
+function timeoutSignal(ms) {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(ms);
+  }
+  const ctrl = new AbortController();
+  setTimeout(() => ctrl.abort(), ms);
+  return ctrl.signal;
 }
 
 async function fetchData() {
   try {
     setStatus('fetch...', 'idle');
     const [psRes, dockerRes, portsRes, sysRes, connRes] = await Promise.all([
-      fetch(apiBase() + '/api/ps', { signal: AbortSignal.timeout(5000) }),
-      fetch(apiBase() + '/api/docker', { signal: AbortSignal.timeout(5000) }).catch(() => null),
-      fetch(apiBase() + '/api/ports', { signal: AbortSignal.timeout(5000) }).catch(() => null),
-      fetch(apiBase() + '/api/system', { signal: AbortSignal.timeout(5000) }).catch(() => null),
-      fetch(apiBase() + '/api/connections', { signal: AbortSignal.timeout(5000) }).catch(() => null),
+      fetch(apiBase() + '/api/ps', { signal: timeoutSignal(5000) }),
+      fetch(apiBase() + '/api/docker', { signal: timeoutSignal(5000) }).catch(() => null),
+      fetch(apiBase() + '/api/ports', { signal: timeoutSignal(5000) }).catch(() => null),
+      fetch(apiBase() + '/api/system', { signal: timeoutSignal(5000) }).catch(() => null),
+      fetch(apiBase() + '/api/connections', { signal: timeoutSignal(5000) }).catch(() => null),
     ]);
     if (!psRes.ok) throw new Error('HTTP ' + psRes.status);
     procData = await psRes.json();
@@ -1040,8 +1056,8 @@ function renderProcs(rows) {
     return 0;
   });
 
-  tbody.innerHTML = rows.map((r, i) => `
-    <tr >
+  tbody.innerHTML = rows.map(r => `
+    <tr>
       <td>${typeTag(r.type)}</td>
       <td class="pid">${r.pid}</td>
       <td class="project">${esc(r.project)}</td>
@@ -1049,7 +1065,7 @@ function renderProcs(rows) {
       <td>${r.venv ? `<span class="venv-tag">${esc(r.venv)}</span>` : '<span class="venv-tag system">system</span>'}</td>
       <td>${r.ports.length ? r.ports.map(p => `<span class="port-tag">:${p}</span>`).join('') : '<span class="no-port">&mdash;</span>'}</td>
       <td class="dir" title="${esc(r.dir)}">${esc(r.dir)}</td>
-      <td><button class="kill-btn" onclick="askKill(${r.pid},'${esc(r.project).replace(/'/g,"\\'")}')">kill</button></td>
+      <td><button class="kill-btn" data-pid="${r.pid}" data-project="${esc(r.project)}">kill</button></td>
     </tr>
   `).join('');
 }
@@ -1162,11 +1178,10 @@ function renderDocker(rows) {
   });
 
   let html = '';
-  let idx = 0;
 
   function containerRow(r, group) {
     const collapsed = group && isCollapsed(group);
-    const row = `
+    return `
       <tr style="${collapsed ? 'display:none;' : ''}" ${group ? `data-group="${esc(group)}"` : ''}>
         <td style="text-align:center;">${techIcon(r.name, r.image)}</td>
         <td class="project">${esc(r.name)}</td>
@@ -1175,19 +1190,17 @@ function renderDocker(rows) {
         <td><span class="docker-status ${r.status.toLowerCase().startsWith('up') ? 'up' : 'other'}">${esc(r.status)}</span></td>
         <td>${dockerPorts(r)}</td>
         <td>
-          <button class="restart-btn" onclick="askDockerRestart('${esc(r.id)}','${esc(r.name).replace(/'/g,"\\'")}')">restart</button>
-          <button class="stop-btn" onclick="askDockerStop('${esc(r.id)}','${esc(r.name).replace(/'/g,"\\'")}')">stop</button>
+          <button class="restart-btn" data-id="${esc(r.id)}" data-name="${esc(r.name)}" data-action="restart">restart</button>
+          <button class="stop-btn" data-id="${esc(r.id)}" data-name="${esc(r.name)}" data-action="stop">stop</button>
         </td>
       </tr>`;
-    idx++;
-    return row;
   }
 
   Object.keys(groups).sort().forEach(proj => {
     const health = getProjectHealth(groups[proj]);
     const collapsed = isCollapsed(proj);
     html += `
-      <tr class="project-row" data-project="${esc(proj)}" onclick="toggleAccordion('${esc(proj).replace(/'/g,"\\'")}')">
+      <tr class="project-row" data-project="${esc(proj)}">
         <td style="text-align:center;">
           <span class="chevron" style="font-size:10px;color:var(--text-dim);display:inline-block;transition:transform .2s;${collapsed ? 'transform:rotate(-90deg);' : ''}">&#9660;</span>
         </td>
@@ -1202,7 +1215,6 @@ function renderDocker(rows) {
         <td></td>
         <td style="color:var(--text-dim);font-size:12px;text-align:right;">${groups[proj].length} container(s)</td>
       </tr>`;
-    idx++;
     groups[proj].forEach(r => { html += containerRow(r, proj); });
   });
 
@@ -1225,8 +1237,8 @@ function renderPorts(rows) {
     tbody.innerHTML = '<tr><td colspan="5" class="empty">No listening ports</td></tr>';
     return;
   }
-  tbody.innerHTML = filtered.map((r, i) => `
-    <tr >
+  tbody.innerHTML = filtered.map(r => `
+    <tr>
       <td><span class="port-tag">:${r.port}</span></td>
       <td class="project">${esc(r.process)}</td>
       <td class="pid">${r.pid || ''}</td>
@@ -1321,6 +1333,24 @@ function applyWatch() {
     line.classList.add('off');
   }
 }
+
+// ── Event delegation (no inline handlers built from process/container data) ──
+document.getElementById('proc-body').addEventListener('click', e => {
+  const btn = e.target.closest('.kill-btn');
+  if (btn) askKill(Number(btn.dataset.pid), btn.dataset.project);
+});
+
+document.getElementById('docker-body').addEventListener('click', e => {
+  const actionBtn = e.target.closest('.restart-btn, .stop-btn');
+  if (actionBtn) {
+    const { id, name, action } = actionBtn.dataset;
+    if (action === 'restart') askDockerRestart(id, name);
+    else askDockerStop(id, name);
+    return;
+  }
+  const projRow = e.target.closest('.project-row');
+  if (projRow) toggleAccordion(projRow.dataset.project);
+});
 
 // ── Init ──
 fetchData();

@@ -5,7 +5,7 @@
 <h1 align="center">DEV WATCH</h1>
 
 <p align="center">
-  <strong>v1.2.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+  <strong>v1.2.1</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 </p>
 
 <!-- Screenshot will be added in a future update -->
@@ -43,7 +43,7 @@
 | ![JavaScript](https://img.shields.io/badge/Vanilla_JS-F7DF1E?logo=javascript&logoColor=black) | Frontend logic, Web Audio API, Notification toasts |
 | ![CSS3](https://img.shields.io/badge/CSS3-1572B6?logo=css3&logoColor=white) | Dark theme, responsive layout, animations |
 | ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white) | Container monitoring (optional) |
-| ![SVG](https://img.shields.io/badge/SVG_Icons-FFB13B?logo=svg&logoColor=black) | 22 local tech icons from [Dashboard Icons](https://dashboardicons.com/) (zero CDN, served locally) |
+| ![SVG](https://img.shields.io/badge/SVG_Icons-FFB13B?logo=svg&logoColor=black) | 23 local tech icons from [Dashboard Icons](https://dashboardicons.com/) (zero CDN, served locally) |
 
 ## Features
 
@@ -63,7 +63,7 @@
 ### Docker Containers
 - Grouped by compose project with accordion
 - Health indicator: green (healthy), orange (unhealthy), red (down)
-- Auto tech detection from container name (22 icons)
+- Auto tech detection from container name (23 icons)
 - Image version tag: orange (latest), green (pinned version)
 - Host-bound ports (host:container) vs internal-only ports
 - Restart / stop buttons
@@ -99,12 +99,19 @@ cd dev-watch
 ```
 
 That's it. `start.sh` handles everything:
-1. Creates a Python virtual environment (`.venv/`) if it doesn't exist
-2. Installs `flask` and `flask-cors` inside the venv
+1. Creates (or repairs) a Python virtual environment (`.venv/`)
+2. Installs runtime dependencies (`flask`) inside the venv, keeping them in sync on each start
 3. Starts the server on `http://localhost:3999`
-4. Opens the dashboard in your browser
+4. Opens the dashboard in your browser (best-effort; the launcher still runs on headless/WSL hosts without `xdg-open`)
 
 Press `Ctrl+C` to stop.
+
+### Running the tests
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt   # adds pytest
+.venv/bin/python3 -m pytest tests/ -q
+```
 
 ### Systemd (optional, auto-start on boot)
 
@@ -123,7 +130,7 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 > [!TIP]
 > **Active protections**
 > - **Bind 127.0.0.1**: invisible from the network
-> - **Restricted CORS**: localhost only, no `null`, no `file://`
+> - **Same-origin only**: the dashboard is served by Flask itself, so no CORS layer is enabled — cross-origin pages get no `Access-Control-Allow-Origin` header and cannot read the API
 > - **PID allowlist**: only scanned processes can be killed (403 otherwise)
 > - **Container allowlist**: only scanned containers can be acted upon (403 otherwise)
 > - **No shell=True**: all commands via subprocess with argument lists
@@ -145,16 +152,20 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 dev-watch/
 ├── src/
 │   ├── __init__.py
+│   ├── config.py          # Shared constants (HOST, PORT)
 │   ├── server.py          # Flask app setup, static routes, entrypoint
 │   ├── routes.py          # All API route handlers
 │   └── helpers.py         # System helpers: process scanning, Docker, network, metrics
 ├── static/
 │   ├── index.html         # Web dashboard (single-file frontend)
-│   └── icons/             # 22 local SVG tech icons + logo
+│   └── icons/             # 23 local SVG tech icons + logo
 ├── tests/
-│   └── test_api.py        # pytest test suite (22 tests)
-├── start.sh               # Launcher: creates venv, installs deps, starts server
-├── requirements.txt       # Python dependencies
+│   ├── __init__.py
+│   ├── test_api.py        # API/endpoint tests (incl. hermetic parsing + kill/docker paths)
+│   └── test_helpers.py    # Unit tests for src/helpers.py
+├── start.sh               # Launcher: creates/repairs venv, installs deps, starts server
+├── requirements.txt       # Runtime dependencies (flask)
+├── requirements-dev.txt   # Dev/test dependencies (pytest)
 ├── dev-watch.service      # Systemd service file (optional)
 ├── CHANGELOG.md
 ├── LICENSE
@@ -166,6 +177,7 @@ dev-watch/
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | Dashboard HTML |
+| `/icons/<file>` | GET | Local SVG tech icon |
 | `/api/ps` | GET | Dev processes + native binaries (excludes containers) |
 | `/api/docker` | GET | Docker containers (status, health, ports, compose project) |
 | `/api/ports` | GET | All listening TCP ports |

@@ -5,10 +5,12 @@ import re
 import signal
 import json
 from flask import jsonify, request
+from src.config import PORT
 from src.helpers import (
     run_cmd, is_in_container, docker_available, get_cwd, get_cmdline, get_venv,
-    get_project_name, get_ports_for_pid, classify_process, is_native_binary,
-    get_cpu_usage, get_ram_usage, get_disk_usage, get_gpu_usage, MAX_CMD_LEN,
+    get_project_name, get_listening_ports, ports_by_pid, first_pid_and_name,
+    classify_process, is_native_binary, get_cpu_usage, get_ram_usage,
+    get_disk_usage, get_gpu_usage, MAX_CMD_LEN,
 )
 
 # Allowlists: only PIDs/containers seen by the last scan can be acted upon
@@ -18,6 +20,14 @@ known_container_ids = set()
 # CPU state for delta calculation (mutable container for closure access)
 _cpu_state = {"prev": None}
 
+# Docker container IDs are hex; also allow compose-style names.
+_DOCKER_ID_RE = re.compile(r'[a-zA-Z0-9_.-]+')
+
+
+def _under(path, base):
+    """True if `path` is `base` itself or lives under it (with a separator)."""
+    return path == base or path.startswith(base + os.sep)
+
 
 def register_routes(app):
     """Register all API routes on the Flask app."""
@@ -25,8 +35,11 @@ def register_routes(app):
     @app.route("/api/ps")
     def api_ps():
         out = run_cmd(["ps", "aux"])
+        # Single listening-ports scan reused for every process (no per-PID N+1).
+        port_map = ports_by_pid(get_listening_ports())
         processes = []
         seen_pids = set()
+        home = os.path.expanduser("~")
 
         for line in out.splitlines()[1:]:
             parts = line.split(None, 10)
@@ -34,9 +47,9 @@ def register_routes(app):
                 continue
             cmd_full = parts[10]
 
-            proc_type = classify_process(cmd_full)
             if "ps aux" in cmd_full:
                 continue
+            proc_type = classify_process(cmd_full)
 
             try:
                 pid = int(parts[1])
@@ -53,10 +66,9 @@ def register_routes(app):
                 continue
 
             cwd = get_cwd(pid)
-            home = os.path.expanduser("~")
 
             # Skip system services (cwd outside home or /tmp)
-            if not (cwd.startswith(home) or cwd.startswith("/tmp")):
+            if not (_under(cwd, home) or _under(cwd, "/tmp")):
                 continue
 
             # Fallback: detect native ELF binaries from user's home
@@ -74,7 +86,7 @@ def register_routes(app):
             script_args = [a for a in cmd_parts[1:] if not a.startswith("-")]
             if script_args and any(a.startswith(("/usr/bin/", "/usr/share/", "/usr/sbin/", "/usr/lib/")) for a in script_args):
                 continue
-            ports = get_ports_for_pid(pid)
+
             project = get_project_name(cwd, proc_type)
             display_cwd = cwd.replace(home, "~") if cwd != "?" else "?"
 
@@ -83,7 +95,7 @@ def register_routes(app):
                 "type": proc_type,
                 "project": project,
                 "cmd": cmdline[:MAX_CMD_LEN],
-                "ports": ports,
+                "ports": port_map.get(pid, []),
                 "dir": display_cwd,
                 "venv": get_venv(pid),
             })
@@ -163,11 +175,11 @@ def register_routes(app):
         return jsonify(containers)
 
     def _docker_action(action):
-        data = request.get_json()
+        data = request.get_json(silent=True)
         container_id = data.get("id") if data else None
         if not container_id or not isinstance(container_id, str):
             return jsonify({"error": "Invalid container ID"}), 400
-        if not re.match(r'^[a-zA-Z0-9_.-]+$', container_id):
+        if not _DOCKER_ID_RE.fullmatch(container_id):
             return jsonify({"error": "Invalid container ID"}), 400
         if container_id not in known_container_ids:
             return jsonify({"error": "Container not recognized"}), 403
@@ -186,10 +198,11 @@ def register_routes(app):
 
     @app.route("/api/kill", methods=["POST"])
     def api_kill():
-        data = request.get_json()
+        data = request.get_json(silent=True)
         pid = data.get("pid") if data else None
 
-        if not pid or not isinstance(pid, int):
+        # bool is a subclass of int — reject it explicitly.
+        if not isinstance(pid, int) or isinstance(pid, bool):
             return jsonify({"error": "Invalid PID"}), 400
         if pid <= 1 or pid == os.getpid():
             return jsonify({"error": "Protected PID"}), 403
@@ -206,30 +219,22 @@ def register_routes(app):
 
     @app.route("/api/ports")
     def api_ports():
-        out = run_cmd(["ss", "-tlnp"])
         ports = []
         seen = set()
-        for line in out.splitlines()[1:]:
-            m = re.search(r'(?:0\.0\.0\.0|127\.0\.0\.1|\[::\]|\[::1\]|\*):(\d+)', line)
-            if not m:
-                continue
-            port = int(m.group(1))
+        for rec in get_listening_ports():
+            port = rec["port"]
             if port in seen:
                 continue
             seen.add(port)
-
-            pid_match = re.search(r'pid=(\d+)', line)
-            pid = int(pid_match.group(1)) if pid_match else None
-            process_name = ""
-            cmd = ""
-            if pid:
-                name_match = re.search(r'\("([^"]+)"', line)
-                process_name = name_match.group(1) if name_match else ""
-                cmd = get_cmdline(pid)[:MAX_CMD_LEN]
-
-            bind = "all" if ('0.0.0.0' in line or '[::]' in line or '*' in line) else "local"
-
-            ports.append({"port": port, "pid": pid, "process": process_name, "cmd": cmd, "bind": bind})
+            pid = rec["pids"][0] if rec["pids"] else None
+            cmd = get_cmdline(pid)[:MAX_CMD_LEN] if pid else ""
+            ports.append({
+                "port": port,
+                "pid": pid,
+                "process": rec["process"],
+                "cmd": cmd,
+                "bind": rec["bind"],
+            })
 
         ports.sort(key=lambda x: x["port"])
         return jsonify(ports)
@@ -255,18 +260,12 @@ def register_routes(app):
             if len(parts) < 5:
                 continue
 
-            pid_match = re.search(r'pid=(\d+)', line)
-            pid = int(pid_match.group(1)) if pid_match else None
-            process_name = ""
-            if pid:
-                name_match = re.search(r'\("([^"]+)"', line)
-                process_name = name_match.group(1) if name_match else ""
-
+            pid, process_name = first_pid_and_name(line)
             connections.append({"local": parts[3], "remote": parts[4], "pid": pid, "process": process_name})
 
         connections.sort(key=lambda x: x["remote"])
         return jsonify(connections)
 
     @app.route("/api/health")
-    def health():
-        return jsonify({"status": "ok", "port": 3999})
+    def api_health():
+        return jsonify({"status": "ok", "port": PORT})
