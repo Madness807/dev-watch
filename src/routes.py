@@ -4,13 +4,14 @@ import os
 import re
 import signal
 import json
+import time
 from flask import jsonify, request
 from src.config import PORT
 from src.helpers import (
     run_cmd, is_in_container, docker_available, get_cwd, get_cmdline, get_venv,
     get_project_name, get_listening_ports, ports_by_pid, first_pid_and_name,
     classify_process, is_native_binary, get_cpu_usage, get_ram_usage,
-    get_disk_usage, get_gpu_usage, MAX_CMD_LEN,
+    get_disk_usage, get_gpu_usage, get_proc_ticks, proc_cpu_percents, MAX_CMD_LEN,
 )
 
 # Allowlists: only PIDs/containers seen by the last scan can be acted upon
@@ -19,6 +20,9 @@ known_container_ids = set()
 
 # CPU state for delta calculation (mutable container for closure access)
 _cpu_state = {"prev": None}
+
+# Per-process CPU state: previous tick snapshot + timestamp for delta computation
+_proc_cpu_state = {"ticks": {}, "time": None}
 
 # Docker container IDs are hex; also allow compose-style names.
 _DOCKER_ID_RE = re.compile(r'[a-zA-Z0-9_.-]+')
@@ -90,6 +94,13 @@ def register_routes(app):
             project = get_project_name(cwd, proc_type)
             display_cwd = cwd.replace(home, "~") if cwd != "?" else "?"
 
+            # RAM from the `ps aux` columns we already have (%MEM, RSS in KB).
+            try:
+                mem_pct = float(parts[3])
+                mem_mb = round(int(parts[5]) / 1024)
+            except ValueError:
+                mem_pct, mem_mb = 0.0, 0
+
             processes.append({
                 "pid": pid,
                 "type": proc_type,
@@ -98,7 +109,18 @@ def register_routes(app):
                 "ports": port_map.get(pid, []),
                 "dir": display_cwd,
                 "venv": get_venv(pid),
+                "mem_mb": mem_mb,
+                "mem_pct": mem_pct,
             })
+
+        # Instantaneous CPU% per process (delta vs the previous scan).
+        ticks_now = get_proc_ticks([p["pid"] for p in processes])
+        now = time.monotonic()
+        cpu_map = proc_cpu_percents(ticks_now, now, _proc_cpu_state["ticks"], _proc_cpu_state["time"])
+        _proc_cpu_state["ticks"] = ticks_now
+        _proc_cpu_state["time"] = now
+        for p in processes:
+            p["cpu"] = cpu_map.get(p["pid"], 0.0)
 
         processes.sort(key=lambda x: x["type"])
         known_pids.clear()

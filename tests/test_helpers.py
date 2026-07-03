@@ -147,3 +147,34 @@ def test_usage_fallbacks_are_independent_copies():
     r, d = get_ram_usage(), get_disk_usage()
     assert set(r) == {"used", "total", "pct"}
     assert set(d) == {"used", "total", "pct"}
+
+
+# ── Per-process CPU ──
+
+def test_proc_cpu_percents_first_sample_is_zero():
+    # No baseline yet -> every pid reports 0.0
+    assert helpers.proc_cpu_percents({10: 500, 20: 900}, 100.0, {}, None) == {10: 0.0, 20: 0.0}
+
+
+def test_proc_cpu_percents_delta():
+    # pid 10 burned 2 core-seconds over 2s -> 100%/core; pid 20 stayed idle -> 0%
+    prev = {10: 1000, 20: 5000}
+    now_ticks = {10: 1000 + 2 * helpers.CLK_TCK, 20: 5000}
+    pct = helpers.proc_cpu_percents(now_ticks, 1002.0, prev, 1000.0)
+    assert pct[10] == 100.0
+    assert pct[20] == 0.0
+
+
+def test_proc_cpu_percents_new_pid_is_zero():
+    # A pid with no previous sample can't have a delta yet.
+    pct = helpers.proc_cpu_percents({30: 400}, 1002.0, {10: 100}, 1000.0)
+    assert pct[30] == 0.0
+
+
+def test_read_proc_ticks_handles_parens_in_comm(monkeypatch):
+    # comm contains a space and a ')' — parsing must key off the LAST ')'.
+    fields_after = "S " + " ".join(str(i) for i in range(1, 40))
+    stat = "4242 (weird )proc) " + fields_after
+    monkeypatch.setattr(builtins, "open", mock_open(read_data=stat))
+    # fields = ['S','1','2',...] -> utime idx11='11', stime idx12='12' -> 23
+    assert helpers.read_proc_ticks(4242) == 23

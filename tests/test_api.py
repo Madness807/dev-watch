@@ -54,7 +54,7 @@ def test_ps_returns_list(client):
 def test_ps_entries_have_required_fields(client):
     res = client.get("/api/ps")
     data = res.get_json()
-    required = {"pid", "type", "project", "cmd", "ports", "dir"}
+    required = {"pid", "type", "project", "cmd", "ports", "dir", "cpu", "mem_mb", "mem_pct"}
     for proc in data:
         assert required.issubset(proc.keys()), f"Missing fields in {proc}"
         assert proc["type"] in ("node", "python", "rust", "go", "deno", "bun", "java", "php", "ruby", "c", "native")
@@ -330,3 +330,7 @@ def test_ps_hermetic_parsing(client, monkeypatch):
     assert procs[4242]["type"] == "node"
     assert procs[4242]["ports"] == [3000]
     assert 4242 in routes.known_pids   # allowlist populated for a subsequent kill
+    # Per-process metrics: RAM from the ps columns; CPU 0.0 on a single scan (no baseline).
+    assert procs[4242]["mem_pct"] == 0.2      # %MEM column from ps_out
+    assert procs[4242]["cpu"] == 0.0
+    assert "mem_mb" in procs[4242]

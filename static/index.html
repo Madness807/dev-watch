@@ -196,6 +196,7 @@
   td { padding: 10px 16px; font-size: 14px; white-space: nowrap; }
 
   .pid     { color: var(--amber); font-weight: 500; font-size: 15px; }
+  .metric  { font-size: 13px; font-weight: 500; white-space: nowrap; text-align: right; }
   .project { color: var(--cyan); font-weight: 500; }
   .cmd     { color: var(--text-dim); font-size: 13px; max-width: 350px; overflow: hidden; text-overflow: ellipsis; }
   .dir     { color: var(--text-dim); font-size: 13px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
@@ -496,7 +497,7 @@
     <path d="M9.9 9.9l-.6-.6M14.7 14.7l-.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
     <path d="M14.1 9.9l.6-.6M9.3 14.7l.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
   </svg>
-  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.2.1</span></div>
+  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.3.0</span></div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
@@ -547,6 +548,8 @@
       <thead><tr>
         <th class="sortable asc" onclick="sortProcs('type',event)">TYPE</th>
         <th class="sortable" onclick="sortProcs('pid',event)">PID</th>
+        <th class="sortable" onclick="sortProcs('cpu',event)">CPU</th>
+        <th class="sortable" onclick="sortProcs('mem_mb',event)">MEM</th>
         <th class="sortable" onclick="sortProcs('project',event)">PROJECT</th>
         <th>COMMAND</th>
         <th>ENV</th>
@@ -554,7 +557,7 @@
         <th>DIRECTORY</th>
         <th></th>
       </tr></thead>
-      <tbody id="proc-body"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+      <tbody id="proc-body"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -1043,7 +1046,7 @@ function renderProcs(rows) {
   document.getElementById('proc-count').textContent = rows.length + ' found';
   const tbody = document.getElementById('proc-body');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="empty">No processes detected</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">No processes detected</td></tr>';
     return;
   }
 
@@ -1060,6 +1063,8 @@ function renderProcs(rows) {
     <tr>
       <td>${typeTag(r.type)}</td>
       <td class="pid">${r.pid}</td>
+      <td class="metric" style="color:${meterColor(r.cpu)}">${r.cpu}%</td>
+      <td class="metric" title="${r.mem_pct}% of RAM" style="color:${meterColor(r.mem_pct)}">${r.mem_mb} MB</td>
       <td class="project">${esc(r.project)}</td>
       <td class="cmd" title="${esc(r.cmd)}">${esc(r.cmd)}</td>
       <td>${r.venv ? `<span class="venv-tag">${esc(r.venv)}</span>` : '<span class="venv-tag system">system</span>'}</td>

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-03
+
+### Added
+- **Per-process CPU & RAM** in the Processes table. CPU% is instantaneous (sampled between
+  scans from `/proc/<pid>/stat` deltas, like `htop`, and can exceed 100% on multi-core
+  processes); RAM (resident MB + `%MEM` tooltip) is read from the existing `ps aux` output at
+  no extra cost. Both columns are colour-coded (green/amber/red) and sortable — sort by CPU
+  or MEM descending to surface the hogs. CPU reads `0%` on the first scan, then real values.
+
 ## [1.2.1] - 2026-07-03
 
 ### Security

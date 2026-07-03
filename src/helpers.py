@@ -191,6 +191,56 @@ def classify_process(cmd_full):
     return None
 
 
+# ── Per-process CPU (instantaneous, sampled between scans like htop) ──
+
+CLK_TCK = os.sysconf("SC_CLK_TCK")  # clock ticks per second (usually 100)
+
+
+def read_proc_ticks(pid):
+    """CPU time (utime+stime, in clock ticks) for a PID from /proc/<pid>/stat.
+
+    Returns None if unreadable. The comm field (field 2) is wrapped in parens
+    and may itself contain spaces or ')', so fields are read after the last ')'.
+    """
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            content = f.read()
+        fields = content[content.rindex(")") + 2:].split()
+        return int(fields[11]) + int(fields[12])  # utime (field 14) + stime (field 15)
+    except Exception:
+        return None
+
+
+def get_proc_ticks(pids):
+    """Map pid -> CPU ticks for the given pids (skips unreadable ones)."""
+    ticks = {}
+    for pid in pids:
+        t = read_proc_ticks(pid)
+        if t is not None:
+            ticks[pid] = t
+    return ticks
+
+
+def proc_cpu_percents(ticks_now, now, prev_ticks, prev_time):
+    """Instantaneous CPU% per pid from two tick snapshots.
+
+    %CPU = 100 * Δticks / (CLK_TCK * Δseconds) — per-core, so a process using
+    more than one core can exceed 100%. Returns 0.0 on the first sample (no
+    baseline) or for a pid unseen last time.
+    """
+    if prev_time is None or now <= prev_time:
+        return {pid: 0.0 for pid in ticks_now}
+    dt = now - prev_time
+    out = {}
+    for pid, t in ticks_now.items():
+        prev = prev_ticks.get(pid)
+        if prev is None:
+            out[pid] = 0.0
+        else:
+            out[pid] = round(max((t - prev) / CLK_TCK / dt * 100, 0.0), 1)
+    return out
+
+
 def is_native_binary(pid):
     """Check if a PID is a native ELF binary running from user's home."""
     try:
