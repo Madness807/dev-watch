@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-07-03
+
+### Added
+- **Trend sparklines**: a small inline SVG trend line rendered next to each per-process CPU and
+  MEM value, and next to the toolbar CPU/RAM/disk (and GPU) meters. It plots the last ~40 scans so
+  a spike is distinguishable from a steady load and a slowly climbing memory leak becomes visible.
+  The line is colour-coded by the current value's threshold. History is a client-side ring buffer
+  (the server stays stateless) that fills over time and resets on reload — no backend/API change.
+
 ## [1.4.0] - 2026-07-03
 
 ### Added

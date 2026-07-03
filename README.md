@@ -5,7 +5,7 @@
 <h1 align="center">DEV WATCH</h1>
 
 <p align="center">
-  <strong>v1.4.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+  <strong>v1.5.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 </p>
 
 <!-- Screenshot will be added in a future update -->
@@ -53,6 +53,7 @@
 - Excludes system services and Docker container processes
 - Venv detection: shows which Python virtual environment a process runs in
 - **Per-process CPU & RAM**: instantaneous CPU% (sampled between scans, like `htop` — can exceed 100% on multi-core processes) and resident memory (MB). CPU shows `0%` on the very first scan, then real values once a baseline exists
+- **Trend sparklines**: a tiny SVG trend line next to each CPU/MEM value (and next to the toolbar CPU/RAM/disk meters) over the last ~40 scans — spot a spike vs a steady load, or a slowly climbing memory leak. History is kept client-side and resets on reload
 - Quick filter buttons by type (11 types)
 - Sortable columns (type, PID, CPU, MEM, project)
 - Kill button (SIGTERM)

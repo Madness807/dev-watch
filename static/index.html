@@ -197,6 +197,9 @@
 
   .pid     { color: var(--amber); font-weight: 500; font-size: 15px; }
   .metric  { font-size: 13px; font-weight: 500; white-space: nowrap; text-align: right; }
+  .spark   { vertical-align: middle; margin-right: 5px; }
+  .meter-spark { display: inline-flex; align-items: center; margin: 0 4px; }
+  .meter-spark svg { vertical-align: middle; }
   .project { color: var(--cyan); font-weight: 500; }
   .cmd     { color: var(--text-dim); font-size: 13px; max-width: 350px; overflow: hidden; text-overflow: ellipsis; }
   .dir     { color: var(--text-dim); font-size: 13px; max-width: 250px; overflow: hidden; text-overflow: ellipsis; }
@@ -528,7 +531,7 @@
     <path d="M9.9 9.9l-.6-.6M14.7 14.7l-.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
     <path d="M14.1 9.9l.6-.6M9.3 14.7l.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
   </svg>
-  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.4.0</span></div>
+  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.5.0</span></div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
@@ -540,10 +543,10 @@
   <span class="ep-status idle" id="ep-status">waiting</span>
   <button class="btn" onclick="document.getElementById('disclaimer-modal').classList.add('show')" style="margin-left:4px;font-size:10px;padding:3px 8px;color:var(--amber);border-color:rgba(251,191,36,.3);">Disclaimer</button>
   <div class="sys-meters" id="sys-meters">
-    <div class="sys-meter"><span class="meter-label">CPU</span><div class="meter-bar"><div class="meter-fill" id="cpu-fill"></div></div><span class="meter-val" id="cpu-val">-</span></div>
-    <div class="sys-meter"><span class="meter-label">RAM</span><div class="meter-bar"><div class="meter-fill" id="ram-fill"></div></div><span class="meter-val" id="ram-val">-</span></div>
-    <div class="sys-meter"><span class="meter-label">DISK</span><div class="meter-bar"><div class="meter-fill" id="disk-fill"></div></div><span class="meter-val" id="disk-val">-</span></div>
-    <div class="sys-meter" id="gpu-meter" style="display:none;"><span class="meter-label">GPU</span><div class="meter-bar"><div class="meter-fill" id="gpu-fill"></div></div><span class="meter-val" id="gpu-val">-</span></div>
+    <div class="sys-meter"><span class="meter-label">CPU</span><div class="meter-bar"><div class="meter-fill" id="cpu-fill"></div></div><span class="meter-spark" id="cpu-spark"></span><span class="meter-val" id="cpu-val">-</span></div>
+    <div class="sys-meter"><span class="meter-label">RAM</span><div class="meter-bar"><div class="meter-fill" id="ram-fill"></div></div><span class="meter-spark" id="ram-spark"></span><span class="meter-val" id="ram-val">-</span></div>
+    <div class="sys-meter"><span class="meter-label">DISK</span><div class="meter-bar"><div class="meter-fill" id="disk-fill"></div></div><span class="meter-spark" id="disk-spark"></span><span class="meter-val" id="disk-val">-</span></div>
+    <div class="sys-meter" id="gpu-meter" style="display:none;"><span class="meter-label">GPU</span><div class="meter-bar"><div class="meter-fill" id="gpu-fill"></div></div><span class="meter-spark" id="gpu-spark"></span><span class="meter-val" id="gpu-val">-</span></div>
   </div>
 </div>
 
@@ -1052,6 +1055,7 @@ async function fetchData() {
     ]);
     if (!psRes.ok) throw new Error('HTTP ' + psRes.status);
     procData = await psRes.json();
+    updateProcHistory(procData);   // one sample per scan (not per filter keystroke)
     dockerData = dockerRes && dockerRes.ok ? await dockerRes.json() : [];
     portsData = portsRes && portsRes.ok ? await portsRes.json() : [];
     connData = connRes && connRes.ok ? await connRes.json() : [];
@@ -1127,8 +1131,8 @@ function renderProcs(rows) {
     <tr>
       <td>${typeTag(r.type)}</td>
       <td class="pid">${r.pid}</td>
-      <td class="metric" style="color:${meterColor(r.cpu)}">${r.cpu}%</td>
-      <td class="metric" title="${r.mem_pct}% of RAM" style="color:${meterColor(r.mem_pct)}">${r.mem_mb} MB</td>
+      <td class="metric">${sparkline((procHistory[r.pid]||{}).cpu, 100, r.cpu)}<span style="color:${meterColor(r.cpu)}">${r.cpu}%</span></td>
+      <td class="metric" title="${r.mem_pct}% of RAM">${sparkline((procHistory[r.pid]||{}).mem, 100, r.mem_pct)}<span style="color:${meterColor(r.mem_pct)}">${r.mem_mb} MB</span></td>
       <td class="project">${esc(r.project)}</td>
       <td class="cmd" title="${esc(r.cmd)}">${esc(r.cmd)}</td>
       <td>${r.venv ? `<span class="venv-tag">${esc(r.venv)}</span>` : '<span class="venv-tag system">system</span>'}</td>
@@ -1150,6 +1154,39 @@ function dockerPorts(r) {
 }
 
 // ── System meters ──
+// ── Trend history (client-side ring buffer; server stays stateless) ──
+const HISTORY_LEN = 40;
+let procHistory = {};                              // pid -> { cpu: [...], mem: [...] }
+let sysHistory = { cpu: [], ram: [], disk: [], gpu: [] };
+
+function pushCapped(arr, val) {
+  arr.push(val);
+  if (arr.length > HISTORY_LEN) arr.shift();
+}
+
+function updateProcHistory(rows) {
+  const alive = new Set(rows.map(r => r.pid));
+  Object.keys(procHistory).forEach(pid => { if (!alive.has(Number(pid))) delete procHistory[pid]; });
+  rows.forEach(r => {
+    const h = procHistory[r.pid] || (procHistory[r.pid] = { cpu: [], mem: [] });
+    pushCapped(h.cpu, r.cpu);
+    pushCapped(h.mem, r.mem_pct);
+  });
+}
+
+// Tiny SVG trend line. refMax keeps a near-idle series flat at the bottom (no noise
+// amplification); a value above refMax (e.g. multi-core CPU > 100%) extends the curve.
+function sparkline(values, refMax, current) {
+  if (!values || values.length < 2) return '';
+  const W = 54, H = 14, n = values.length;
+  const scale = Math.max(refMax, ...values) || 1;
+  const stepX = W / (n - 1);
+  const pts = values.map((v, i) =>
+    `${(i * stepX).toFixed(1)},${(H - (v / scale) * H).toFixed(1)}`).join(' ');
+  return `<svg class="spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` +
+    `<polyline points="${pts}" fill="none" stroke="${meterColor(current)}" stroke-width="1.2"/></svg>`;
+}
+
 function meterColor(pct) {
   if (pct > 85) return 'var(--red)';
   if (pct > 60) return 'var(--amber)';
@@ -1163,15 +1200,28 @@ function updateMeter(id, pct, label) {
   if (val) { val.textContent = label; val.style.color = meterColor(pct); }
 }
 
+function updateSpark(id, history, pct) {
+  const el = document.getElementById(id + '-spark');
+  if (el) el.innerHTML = sparkline(history, 100, pct);
+}
+
 function renderSystem(sys) {
   updateMeter('cpu', sys.cpu, sys.cpu + '%');
   updateMeter('ram', sys.ram.pct, sys.ram.pct + '%');
   updateMeter('disk', sys.disk.pct, sys.disk.pct + '%');
+  pushCapped(sysHistory.cpu, sys.cpu);
+  pushCapped(sysHistory.ram, sys.ram.pct);
+  pushCapped(sysHistory.disk, sys.disk.pct);
+  updateSpark('cpu', sysHistory.cpu, sys.cpu);
+  updateSpark('ram', sysHistory.ram, sys.ram.pct);
+  updateSpark('disk', sysHistory.disk, sys.disk.pct);
   if (sys.gpu) {
     const gpuMeter = document.getElementById('gpu-meter');
     if (gpuMeter) gpuMeter.style.display = '';
     const vramPct = sys.gpu.vram_total > 0 ? Math.round(sys.gpu.vram_used / sys.gpu.vram_total * 100) : 0;
     updateMeter('gpu', vramPct, vramPct + '%');
+    pushCapped(sysHistory.gpu, vramPct);
+    updateSpark('gpu', sysHistory.gpu, vramPct);
   }
 }
 
