@@ -40,6 +40,23 @@ def test_dashboard_served(client):
     res = client.get("/")
     assert res.status_code == 200
     assert b"DEV WATCH" in res.data
+    # dashboard now references the extracted CSS/JS instead of inline blocks
+    assert b'href="/styles.css"' in res.data
+    assert b'src="/app.js"' in res.data
+
+
+def test_styles_css_served(client):
+    res = client.get("/styles.css")
+    assert res.status_code == 200
+    assert "css" in res.headers["Content-Type"]
+    assert b"--bg" in res.data          # a known CSS token
+
+
+def test_app_js_served(client):
+    res = client.get("/app.js")
+    assert res.status_code == 200
+    assert "javascript" in res.headers["Content-Type"]
+    assert b"function sparkline" in res.data   # a known JS token
 
 
 # ── Processes ──

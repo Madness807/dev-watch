@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-07-03
+
+### Changed
+- Split the monolithic `static/index.html` (~1500 lines) into `index.html` (structure),
+  `styles.css` and `app.js`, served as-is by Flask (new `/styles.css` and `/app.js` routes).
+  Still no build step / bundler. `app.js` stays a classic (non-module) script so the existing
+  inline event handlers keep resolving to global functions — pure extraction, no behaviour change.
+
 ## [1.5.0] - 2026-07-03
 
 ### Added

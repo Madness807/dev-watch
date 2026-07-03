@@ -27,6 +27,16 @@ def serve_dashboard():
     return send_from_directory(STATIC_DIR, "index.html")
 
 
+@app.route("/styles.css")
+def serve_css():
+    return send_from_directory(STATIC_DIR, "styles.css")
+
+
+@app.route("/app.js")
+def serve_js():
+    return send_from_directory(STATIC_DIR, "app.js")
+
+
 @app.route("/icons/<path:filename>")
 def serve_icon(filename):
     return send_from_directory(os.path.join(STATIC_DIR, "icons"), filename)

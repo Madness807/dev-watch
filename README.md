@@ -5,7 +5,7 @@
 <h1 align="center">DEV WATCH</h1>
 
 <p align="center">
-  <strong>v1.5.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+  <strong>v1.5.1</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 </p>
 
 <!-- Screenshot will be added in a future update -->
@@ -39,7 +39,7 @@
 |-----------|-------|
 | ![Python](https://img.shields.io/badge/Python_3-3776AB?logo=python&logoColor=white) | Backend server, process scanning, system metrics |
 | ![Flask](https://img.shields.io/badge/Flask-000000?logo=flask&logoColor=white) | REST API + static file serving |
-| ![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white) | Single-file dashboard (no build step) |
+| ![HTML5](https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white) | Dashboard UI — no-build static frontend (HTML + CSS + JS served as-is, no bundler) |
 | ![JavaScript](https://img.shields.io/badge/Vanilla_JS-F7DF1E?logo=javascript&logoColor=black) | Frontend logic, Web Audio API, Notification toasts |
 | ![CSS3](https://img.shields.io/badge/CSS3-1572B6?logo=css3&logoColor=white) | Dark theme, responsive layout, animations |
 | ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white) | Container monitoring (optional) |
@@ -166,7 +166,9 @@ dev-watch/
 │   ├── routes.py          # All API route handlers
 │   └── helpers.py         # System helpers: process scanning, Docker, network, metrics
 ├── static/
-│   ├── index.html         # Web dashboard (single-file frontend)
+│   ├── index.html         # Dashboard structure (references styles.css + app.js)
+│   ├── styles.css         # Dashboard styles
+│   ├── app.js             # Dashboard logic (fetch, render, sparklines, actions, notifications)
 │   └── icons/             # 23 local SVG tech icons + logo
 ├── tests/
 │   ├── __init__.py
