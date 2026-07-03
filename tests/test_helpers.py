@@ -1,6 +1,7 @@
 """Hermetic unit tests for src/helpers.py (no live ps/ss/docker/proc)."""
 
 import builtins
+import os
 from unittest.mock import mock_open
 
 import pytest
@@ -10,6 +11,7 @@ from src.helpers import (
     classify_process, parse_listening_ports, ports_by_pid, first_pid_and_name,
     get_project_name, get_venv, is_native_binary, get_cpu_usage,
     get_ram_usage, get_disk_usage,
+    find_project_root, normalize_name, build_projects,
 )
 
 
@@ -178,3 +180,94 @@ def test_read_proc_ticks_handles_parens_in_comm(monkeypatch):
     monkeypatch.setattr(builtins, "open", mock_open(read_data=stat))
     # fields = ['S','1','2',...] -> utime idx11='11', stime idx12='12' -> 23
     assert helpers.read_proc_ticks(4242) == 23
+
+
+# ── Project correlation (cockpit) ──
+
+def test_find_project_root_deepest_marker_wins(tmp_path):
+    home = tmp_path
+    proj = tmp_path / "code" / "myapp"
+    sub = proj / "src" / "deep"
+    sub.mkdir(parents=True)
+    (proj / "package.json").write_text("{}")
+    assert find_project_root(str(sub), str(home)) == os.path.realpath(str(proj))
+
+
+def test_find_project_root_inner_marker_beats_git_root(tmp_path):
+    # Fine granularity: an inner package.json splits a monorepo at the app boundary.
+    home = tmp_path
+    repo = tmp_path / "monorepo"
+    (repo / ".git").mkdir(parents=True)
+    web = repo / "apps" / "web"
+    web.mkdir(parents=True)
+    (web / "package.json").write_text("{}")
+    assert find_project_root(str(web), str(home)) == os.path.realpath(str(web))
+
+
+def test_find_project_root_none_for_home_or_unmarked(tmp_path):
+    home = tmp_path
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    assert find_project_root(str(scratch), str(home)) is None   # no marker below home
+    assert find_project_root(str(home), str(home)) is None      # home itself
+    assert find_project_root("?", str(home)) is None
+
+
+def test_normalize_name():
+    assert normalize_name("My-App") == "myapp"
+    assert normalize_name("@acme/web") == "web"          # scope segment dropped
+    assert normalize_name("C:\\Users\\me\\proj") == "proj"  # backslash path
+    assert normalize_name("") == ""
+
+
+def test_build_projects_process_joins_its_container():
+    home = "/home/dev"
+    procs = [{"pid": 100, "type": "node", "project": "web", "dir_full": "/home/dev/shop/web",
+              "project_root": "/home/dev/shop/web", "cpu": 12.0, "mem_mb": 120}]
+    conts = [{"id": "aaa", "name": "db", "image": "postgres", "status": "Up", "health": "healthy",
+              "project": "shop", "service": "db", "work_dir": "/home/dev/shop",
+              "ports": [{"host": 5432, "container": 5432}]}]
+    ports = [{"port": 3000, "pid": 100, "process": "node", "bind": "local"},
+             {"port": 5432, "pid": 999, "process": "proxy", "bind": "all"}]
+    res = build_projects(procs, conts, ports, home)
+    assert [g["key"] for g in res] == ["compose:shop"]
+    card = res[0]
+    assert len(card["processes"]) == 1 and len(card["containers"]) == 1
+    assert {p["port"] for p in card["ports"]} == {3000, 5432}   # pid-join + host-port-join
+
+
+def test_build_projects_separates_compose_envs():
+    home = "/home/dev"
+    conts = [{"id": "b", "name": "s1", "image": "redis", "status": "Up", "health": "none",
+              "project": "svc-staging", "service": "c", "work_dir": "/home/dev/svc", "ports": []},
+             {"id": "c", "name": "s2", "image": "redis", "status": "Up", "health": "none",
+              "project": "svc-prod", "service": "c", "work_dir": "/home/dev/svc", "ports": []}]
+    res = build_projects([], conts, [], home)
+    assert sorted(g["key"] for g in res) == ["compose:svc-prod", "compose:svc-staging"]
+
+
+def test_build_projects_ungrouped_bucket():
+    home = "/home/dev"
+    procs = [{"pid": 300, "type": "node", "project": "dev", "dir_full": "/home/dev",
+              "project_root": None, "cpu": 0.0, "mem_mb": 10}]
+    conts = [{"id": "d", "name": "adhoc", "image": "nginx", "status": "Up", "health": "none",
+              "project": "", "service": "", "work_dir": None, "ports": [{"host": 8080, "container": 80}]}]
+    ports = [{"port": 9999, "pid": None, "process": "", "bind": "all"}]
+    res = build_projects(procs, conts, ports, home)
+    assert [g["key"] for g in res] == ["__ungrouped__"]
+    u = res[0]
+    assert len(u["processes"]) == 1 and len(u["containers"]) == 1
+    assert {p["port"] for p in u["ports"]} == {9999}   # orphan port
+
+
+def test_build_projects_wsl_workdir_bridges_by_name():
+    # Compose container whose work_dir is unusable (WSL -> None) merges into the
+    # process's dir group when the normalized names match (last-resort bridge).
+    home = "/home/dev"
+    procs = [{"pid": 1, "type": "node", "project": "myapp", "dir_full": "/home/dev/myapp",
+              "project_root": "/home/dev/myapp", "cpu": 1.0, "mem_mb": 5}]
+    conts = [{"id": "e", "name": "db", "image": "pg", "status": "Up", "health": "none",
+              "project": "myapp", "service": "db", "work_dir": None, "ports": []}]
+    res = build_projects(procs, conts, [], home)
+    assert len(res) == 1
+    assert len(res[0]["processes"]) == 1 and len(res[0]["containers"]) == 1

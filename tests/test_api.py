@@ -391,3 +391,34 @@ def test_open_spawn_failure_returns_500(client, tmp_path, monkeypatch):
     monkeypatch.setattr(routes, "spawn_detached", lambda cmd: False)  # opener binary missing
     res = client.post("/api/open", json={"path": str(tmp_path)})
     assert res.status_code == 500
+
+
+# ── Cockpit (/api/projects) ──
+
+def test_projects_endpoint_groups_process_with_container(client, monkeypatch):
+    monkeypatch.setattr(routes, "scan_processes", lambda: [
+        {"pid": 100, "type": "node", "project": "web", "dir_full": "/home/dev/shop/web",
+         "project_root": "/home/dev/shop/web", "cpu": 1.0, "mem_mb": 10, "ports": [3000]}])
+    monkeypatch.setattr(routes, "scan_containers", lambda: [
+        {"id": "aaa", "name": "db", "image": "postgres", "status": "Up", "health": "healthy",
+         "project": "shop", "service": "db", "work_dir": "/home/dev/shop",
+         "ports": [{"host": 5432, "container": 5432}], "internal_ports": []}])
+    monkeypatch.setattr(routes, "scan_ports", lambda: [
+        {"port": 3000, "pid": 100, "process": "node", "bind": "local", "cmd": ""},       # joins by pid
+        {"port": 5432, "pid": 999, "process": "docker-proxy", "bind": "all", "cmd": ""}])  # joins by host port
+    res = client.get("/api/projects")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert isinstance(data, list) and len(data) == 1
+    card = data[0]
+    assert {"key", "name", "processes", "containers", "ports", "health", "cpu", "mem_mb"} <= set(card)
+    assert len(card["processes"]) == 1 and len(card["containers"]) == 1
+    assert {p["port"] for p in card["ports"]} == {3000, 5432}
+
+
+def test_projects_endpoint_empty(client, monkeypatch):
+    for fn in ("scan_processes", "scan_containers", "scan_ports"):
+        monkeypatch.setattr(routes, fn, lambda: [])
+    res = client.get("/api/projects")
+    assert res.status_code == 200
+    assert res.get_json() == []

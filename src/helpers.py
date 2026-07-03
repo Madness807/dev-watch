@@ -101,6 +101,165 @@ def get_cmdline(pid):
         return ""
 
 
+def path_under(path, base):
+    """True if `path` is `base` itself or lives under it (with a separator)."""
+    return path == base or path.startswith(base.rstrip(os.sep) + os.sep)
+
+
+# ── Project correlation (cockpit view) ──
+
+PROJECT_MARKERS = (
+    "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml",
+    "package.json", "pyproject.toml", "Cargo.toml", "go.mod", ".git",
+)
+
+
+def find_project_root(path, home, markers=PROJECT_MARKERS):
+    """Nearest ancestor of `path` (inclusive) holding a project marker, stopping
+    *below* `home`. Returns the root dir, or None when `path` is '?'/at-or-above
+    home, or no marker is found before reaching home (fine-grained: the DEEPEST
+    marker wins). Markers at the home level are ignored (avoids a 'home is a repo'
+    pathology swallowing everything)."""
+    if not path or path == "?":
+        return None
+    path = os.path.realpath(path)
+    home = os.path.realpath(home)
+    if path == home or not path_under(path, home):
+        return None
+    cur = path
+    while cur != home and path_under(cur, home):
+        for m in markers:
+            if os.path.exists(os.path.join(cur, m)):
+                return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    return None
+
+
+def normalize_name(s):
+    """Lowercase and strip to [a-z0-9] (last path/scope segment first). Used only
+    as a last-resort name bridge, never as a primary grouping key."""
+    if not s:
+        return ""
+    s = s.replace("\\", "/").rstrip("/")
+    s = s.rsplit("/", 1)[-1]  # basename / last scope segment (@acme/web -> web)
+    return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def _project_health(containers):
+    if any(not c.get("status", "").lower().startswith("up") for c in containers):
+        return "red"
+    if any(c.get("health") == "unhealthy" for c in containers):
+        return "orange"
+    return "green"
+
+
+def _finalize_group(g):
+    procs, conts = g["processes"], g["containers"]
+    name = g.get("name")
+    if not name:
+        for p in procs:
+            if p.get("project") and p["project"] != "?":
+                name = p["project"]
+                break
+    if not name:
+        for c in conts:
+            name = c.get("project") or c.get("service") or c.get("name")
+            if name:
+                break
+    if not name and g.get("root"):
+        name = os.path.basename(g["root"])
+    g["name"] = name or "unknown"
+    g["cpu"] = round(sum(p.get("cpu", 0) for p in procs), 1)
+    g["mem_mb"] = sum(p.get("mem_mb", 0) for p in procs)
+    g["health"] = _project_health(conts)
+    return g
+
+
+def build_projects(processes, containers, ports, home):
+    """Group processes + containers + ports into project cards by canonical root.
+
+    Pure function over already-resolved fields (process 'dir_full'/'project_root',
+    container 'work_dir'/'project'/'service'). Correlation: containers key on the
+    compose project label (separates `-p` envs); a process joins the container
+    group whose realpath work_dir CONTAINS its cwd (longest/deepest wins), else it
+    groups by its own project_root; ports attach by pid then by published host
+    port. Everything unmatched lands in a persistent 'ungrouped' bucket. Prefers
+    under-grouping over false-merge (distinct roots never merge on basename).
+    """
+    def new_group(key, root=None, name=None):
+        return {"key": key, "name": name, "root": root,
+                "processes": [], "containers": [], "ports": []}
+
+    groups = {}
+    ungrouped = new_group("__ungrouped__", name="Ungrouped")
+    anchors = []  # (realpath work_dir, group_key) for process attachment
+
+    for c in containers:
+        label = c.get("project") or ""
+        if not label:                       # standalone (non-compose) container
+            ungrouped["containers"].append(c)
+            continue
+        key = "compose:" + label
+        work = c.get("work_dir")            # realpath dir, or None (WSL/daemon path)
+        g = groups.setdefault(key, new_group(key, root=work))
+        g["containers"].append(c)
+        if work:
+            anchors.append((work, key))
+
+    pid_to_group = {}
+    for p in processes:
+        cwd = p.get("dir_full")
+        best, best_len = None, -1
+        if cwd and cwd != "?":
+            for work, key in anchors:
+                if path_under(cwd, work) and len(work) > best_len:
+                    best, best_len = key, len(work)
+        if best is not None:
+            g = groups[best]
+        elif p.get("project_root"):
+            key = "dir:" + p["project_root"]
+            g = groups.setdefault(key, new_group(key, root=p["project_root"]))
+        else:
+            g = ungrouped
+        g["processes"].append(p)
+        if p.get("pid") is not None:
+            pid_to_group[p["pid"]] = g
+
+    # Last-resort name bridge: a compose container with no usable work_dir (WSL)
+    # merges into a directory group whose basename normalizes to the same name.
+    for key in [k for k, g in groups.items() if g["root"] is None and k.startswith("compose:")]:
+        label = key[len("compose:"):]
+        for other in groups.values():
+            if other["root"] and normalize_name(os.path.basename(other["root"])) == normalize_name(label):
+                other["containers"].extend(groups[key]["containers"])
+                del groups[key]
+                break
+
+    host_port_to_group = {}
+    for g in groups.values():
+        for c in g["containers"]:
+            for hp in c.get("ports", []):
+                host_port_to_group[hp.get("host")] = g
+
+    for pt in ports:
+        pid = pt.get("pid")
+        if pid in pid_to_group:
+            pid_to_group[pid]["ports"].append(pt)
+        elif pt.get("port") in host_port_to_group:
+            host_port_to_group[pt["port"]]["ports"].append(pt)
+        else:
+            ungrouped["ports"].append(pt)
+
+    result = [_finalize_group(g) for g in groups.values()]
+    if ungrouped["processes"] or ungrouped["containers"] or ungrouped["ports"]:
+        result.append(_finalize_group(ungrouped))
+    result.sort(key=lambda g: (g["key"] == "__ungrouped__", (g["name"] or "").lower()))
+    return result
+
+
 def get_project_name(cwd, proc_type):
     if proc_type == "node":
         pkg = os.path.join(cwd, "package.json")

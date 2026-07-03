@@ -18,7 +18,7 @@
     <path d="M9.9 9.9l-.6-.6M14.7 14.7l-.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
     <path d="M14.1 9.9l.6-.6M9.3 14.7l.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
   </svg>
-  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.5.1</span></div>
+  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.6.0</span></div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
@@ -27,6 +27,10 @@
   <input class="filter" type="text" id="filter" placeholder="pid, project, port, type..." oninput="renderAll()">
   <button class="btn" onclick="fetchData()">Refresh</button>
   <button class="btn active" id="watch-btn" onclick="cycleWatch()">Watch 10s</button>
+  <span class="view-toggle">
+    <button class="vbtn" id="view-cockpit" onclick="setView('cockpit')">Cockpit</button>
+    <button class="vbtn" id="view-tables" onclick="setView('tables')">Tables</button>
+  </span>
   <span class="ep-status idle" id="ep-status">waiting</span>
   <button class="btn" onclick="document.getElementById('disclaimer-modal').classList.add('show')" style="margin-left:4px;font-size:10px;padding:3px 8px;color:var(--amber);border-color:rgba(251,191,36,.3);">Disclaimer</button>
   <div class="sys-meters" id="sys-meters">
@@ -40,6 +44,14 @@
 <div class="toast-container" id="toast-container"></div>
 <div class="error-banner" id="error-banner"></div>
 <div class="status-line" id="status-line"></div>
+
+<!-- Cockpit (grouped by project) -->
+<div id="cockpit-view">
+  <div id="cockpit-body"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- Flat tables -->
+<div id="flat-view">
 
 <!-- Processes -->
 <div class="section-card collapsed" id="section-proc">
@@ -145,6 +157,8 @@
     </table>
   </div>
 </div>
+
+</div><!-- /flat-view -->
 
 <div class="status-bar">
   <div class="status-item">Processes : <span class="info" id="total-procs"></span></div>

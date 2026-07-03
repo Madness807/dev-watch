@@ -2,10 +2,13 @@ let procData = [];
 let dockerData = [];
 let portsData = [];
 let connData = [];
+let projectsData = [];
 let actionTarget = null;
 let watchInterval = null;
 const WATCH_SPEEDS = [3, 5, 10, 0]; // 0 = off
 let watchSpeedIdx = 2; // default 10s
+let viewMode = (localStorage.getItem('dw-view') === 'tables') ? 'tables' : 'cockpit';
+let cockpitCollapsed = {};
 
 // ── Section accordions ──
 function toggleSection(id) {
@@ -315,19 +318,35 @@ function portTags(ports) {
 async function fetchData() {
   try {
     setStatus('fetch...', 'idle');
-    const [psRes, dockerRes, portsRes, sysRes, connRes] = await Promise.all([
-      fetch(apiBase() + '/api/ps', { signal: timeoutSignal(5000) }),
-      fetch(apiBase() + '/api/docker', { signal: timeoutSignal(5000) }).catch(() => null),
-      fetch(apiBase() + '/api/ports', { signal: timeoutSignal(5000) }).catch(() => null),
-      fetch(apiBase() + '/api/system', { signal: timeoutSignal(5000) }).catch(() => null),
-      fetch(apiBase() + '/api/connections', { signal: timeoutSignal(5000) }).catch(() => null),
-    ]);
-    if (!psRes.ok) throw new Error('HTTP ' + psRes.status);
-    procData = await psRes.json();
+    // System meters are fetched in both views.
+    const sysReq = fetch(apiBase() + '/api/system', { signal: timeoutSignal(5000) }).catch(() => null);
+
+    if (viewMode === 'cockpit') {
+      const res = await fetch(apiBase() + '/api/projects', { signal: timeoutSignal(5000) });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      projectsData = await res.json();
+      // Derive flat arrays from the grouped payload (drives history, notifications, counts).
+      procData = projectsData.flatMap(g => g.processes);
+      dockerData = projectsData.flatMap(g => g.containers);
+      portsData = projectsData.flatMap(g => g.ports);
+      connData = [];
+    } else {
+      const [psRes, dockerRes, portsRes, connRes] = await Promise.all([
+        fetch(apiBase() + '/api/ps', { signal: timeoutSignal(5000) }),
+        fetch(apiBase() + '/api/docker', { signal: timeoutSignal(5000) }).catch(() => null),
+        fetch(apiBase() + '/api/ports', { signal: timeoutSignal(5000) }).catch(() => null),
+        fetch(apiBase() + '/api/connections', { signal: timeoutSignal(5000) }).catch(() => null),
+      ]);
+      if (!psRes.ok) throw new Error('HTTP ' + psRes.status);
+      procData = await psRes.json();
+      dockerData = dockerRes && dockerRes.ok ? await dockerRes.json() : [];
+      portsData = portsRes && portsRes.ok ? await portsRes.json() : [];
+      connData = connRes && connRes.ok ? await connRes.json() : [];
+      projectsData = [];
+    }
+
     updateProcHistory(procData);   // one sample per scan (not per filter keystroke)
-    dockerData = dockerRes && dockerRes.ok ? await dockerRes.json() : [];
-    portsData = portsRes && portsRes.ok ? await portsRes.json() : [];
-    connData = connRes && connRes.ok ? await connRes.json() : [];
+    const sysRes = await sysReq;
     const sysData = sysRes && sysRes.ok ? await sysRes.json() : null;
     if (sysData) renderSystem(sysData);
     checkNotifications(procData, dockerData);
@@ -367,12 +386,14 @@ function ts() { return new Date().toTimeString().slice(0, 8); }
 
 function renderAll() {
   const f = getFilter();
-  const filteredProcs = procData.filter(r => matchProc(r, f));
-  const filteredDocker = dockerData.filter(r => matchDocker(r, f));
-  renderProcs(filteredProcs);
-  renderDocker(filteredDocker);
-  renderPorts(portsData);
-  renderConnections(connData);
+  if (viewMode === 'cockpit') {
+    renderCockpit(projectsData, f);
+  } else {
+    renderProcs(procData.filter(r => matchProc(r, f)));
+    renderDocker(dockerData.filter(r => matchDocker(r, f)));
+    renderPorts(portsData);
+    renderConnections(connData);
+  }
 
   document.getElementById('total-procs').textContent = procData.length;
   document.getElementById('total-docker').textContent = dockerData.length;
@@ -745,6 +766,122 @@ async function openDir(path) {
   }
 }
 
+// ── Cockpit (grouped by project) ──
+function applyViewClasses() {
+  document.body.classList.toggle('mode-cockpit', viewMode === 'cockpit');
+  document.body.classList.toggle('mode-tables', viewMode === 'tables');
+  const c = document.getElementById('view-cockpit'), t = document.getElementById('view-tables');
+  if (c) c.classList.toggle('active', viewMode === 'cockpit');
+  if (t) t.classList.toggle('active', viewMode === 'tables');
+}
+
+function setView(mode) {
+  viewMode = (mode === 'tables') ? 'tables' : 'cockpit';
+  localStorage.setItem('dw-view', viewMode);
+  applyViewClasses();
+  fetchData();
+}
+
+function toggleCard(key) {
+  cockpitCollapsed[key] = !cockpitCollapsed[key];
+  renderAll();
+}
+
+function matchPortRow(r, f) {
+  return String(r.port).includes(f) ||
+    (r.process || '').toLowerCase().includes(f) ||
+    (r.cmd || '').toLowerCase().includes(f);
+}
+
+function projectHostPorts(g) {
+  const set = new Set();
+  g.processes.forEach(p => (p.ports || []).forEach(x => set.add(x)));
+  g.containers.forEach(c => (c.ports || []).forEach(x => set.add(x.host)));
+  return [...set].sort((a, b) => a - b);
+}
+
+function filterProjectMembers(g, f) {
+  if (!f || (g.name || '').toLowerCase().includes(f)) return g;
+  const processes = g.processes.filter(r => matchProc(r, f));
+  const containers = g.containers.filter(r => matchDocker(r, f));
+  const ports = g.ports.filter(r => matchPortRow(r, f));
+  if (!processes.length && !containers.length && !ports.length) return null;
+  return { ...g, processes, containers, ports };
+}
+
+function cockpitProcRow(p) {
+  const cpuSpark = sparkline((procHistory[p.pid] || {}).cpu, 100, p.cpu);
+  return `<div class="proj-row">
+    ${typeTag(p.type)}
+    <span class="pid">${p.pid}</span>
+    <span class="metric">${cpuSpark}<span style="color:${meterColor(p.cpu)}">${p.cpu}%</span></span>
+    <span class="metric">${p.mem_mb} MB</span>
+    <span class="cmd" title="${esc(p.cmd)}">${esc(p.cmd)}</span>
+    <span class="spacer"></span>
+    <button class="opendir-btn" data-path="${esc(p.dir_full)}" title="Open folder">dir</button>
+    <button class="kill-btn" data-pid="${p.pid}" data-project="${esc(p.project)}">kill</button>
+  </div>`;
+}
+
+function cockpitContainerRow(c) {
+  const up = c.status.toLowerCase().startsWith('up');
+  return `<div class="proj-row">
+    ${techIcon(c.name, c.image)}
+    <span class="cname">${esc(c.name)}${c.service ? ` <span class="project-badges">(${esc(c.service)})</span>` : ''}</span>
+    <span class="docker-status ${up ? 'up' : 'other'}">${esc(c.status)}</span>
+    ${dockerPorts(c)}
+    <span class="spacer"></span>
+    <button class="restart-btn" data-id="${esc(c.id)}" data-name="${esc(c.name)}" data-action="restart">restart</button>
+    <button class="stop-btn" data-id="${esc(c.id)}" data-name="${esc(c.name)}" data-action="stop">stop</button>
+  </div>`;
+}
+
+function cockpitPortRow(pt) {
+  return `<div class="proj-row">
+    ${portTags([pt.port])}
+    <span class="project">${esc(pt.process || '')}</span>
+    <span class="pid">${pt.pid || ''}</span>
+    <span class="bind-tag ${pt.bind}">${pt.bind === 'all' ? '0.0.0.0' : '127.0.0.1'}</span>
+  </div>`;
+}
+
+function renderProjectCard(g) {
+  const collapsed = cockpitCollapsed[g.key];
+  const ung = g.key === '__ungrouped__';
+  const badges = [];
+  if (g.processes.length) badges.push(g.processes.length + ' proc');
+  if (g.containers.length) badges.push(g.containers.length + ' cont');
+
+  const shownPids = new Set(g.processes.map(p => p.pid));
+  const hostPorts = new Set(g.containers.flatMap(c => (c.ports || []).map(x => x.host)));
+  const orphanPorts = g.ports.filter(pt => !shownPids.has(pt.pid) && !hostPorts.has(pt.port));
+
+  let detail = g.processes.map(cockpitProcRow).join('') + g.containers.map(cockpitContainerRow).join('');
+  if (orphanPorts.length) {
+    detail += '<div class="proj-section-label">ports</div>' + orphanPorts.map(cockpitPortRow).join('');
+  }
+
+  return `<div class="project-card ${collapsed ? 'collapsed' : ''} ${ung ? 'ungrouped' : ''}">
+    <div class="project-head" data-card="${esc(g.key)}">
+      <span class="chevron">&#9660;</span>
+      <span class="health-dot ${g.health}"></span>
+      <span class="project-name">${esc(g.name)}</span>
+      <span class="project-badges">${badges.join(' · ')}</span>
+      ${g.processes.length ? `<span class="project-summary">CPU ${g.cpu}% · ${g.mem_mb} MB</span>` : ''}
+      <span class="project-chips">${portTags(projectHostPorts(g))}</span>
+    </div>
+    <div class="project-detail">${detail || '<div class="empty">empty</div>'}</div>
+  </div>`;
+}
+
+function renderCockpit(projects, f) {
+  const body = document.getElementById('cockpit-body');
+  const cards = projects.map(g => filterProjectMembers(g, f)).filter(Boolean);
+  body.innerHTML = cards.length
+    ? cards.map(renderProjectCard).join('')
+    : '<div class="empty">No projects detected</div>';
+}
+
 // ── Event delegation (no inline handlers built from process/container data) ──
 document.getElementById('proc-body').addEventListener('click', e => {
   const kill = e.target.closest('.kill-btn');
@@ -778,6 +915,27 @@ document.getElementById('docker-body').addEventListener('click', e => {
   if (projRow) toggleAccordion(projRow.dataset.project);
 });
 
+// Cockpit: one delegated handler reusing all existing action functions.
+document.getElementById('cockpit-view').addEventListener('click', e => {
+  const portOpen = e.target.closest('.port-open');
+  if (portOpen) { openUrl(portOpen.dataset.port); return; }
+  const portCopy = e.target.closest('.port-copy');
+  if (portCopy) { copyUrl(portCopy.dataset.port); return; }
+  const kill = e.target.closest('.kill-btn');
+  if (kill) { askKill(Number(kill.dataset.pid), kill.dataset.project); return; }
+  const opendir = e.target.closest('.opendir-btn');
+  if (opendir) { openDir(opendir.dataset.path); return; }
+  const action = e.target.closest('.restart-btn, .stop-btn');
+  if (action) {
+    const { id, name, action: act } = action.dataset;
+    if (act === 'restart') askDockerRestart(id, name); else askDockerStop(id, name);
+    return;
+  }
+  const head = e.target.closest('.project-head');
+  if (head) { toggleCard(head.dataset.card); return; }
+});
+
 // ── Init ──
+applyViewClasses();
 fetchData();
 applyWatch();

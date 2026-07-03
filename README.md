@@ -5,7 +5,7 @@
 <h1 align="center">DEV WATCH</h1>
 
 <p align="center">
-  <strong>v1.5.1</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+  <strong>v1.6.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 </p>
 
 <!-- Screenshot will be added in a future update -->
@@ -46,6 +46,19 @@
 | ![SVG](https://img.shields.io/badge/SVG_Icons-FFB13B?logo=svg&logoColor=black) | 23 local tech icons from [Dashboard Icons](https://dashboardicons.com/) (zero CDN, served locally) |
 
 ## Features
+
+### Project Cockpit (default view)
+
+Groups a project's **processes + Docker containers + listening ports** into a single card
+(e.g. `web`: the node dev server on `:3000`, its postgres container on `:5432`, healthy) instead
+of four disconnected tables. Correlation is by **canonical project directory** (a process joins the
+container whose compose `working_dir` contains its `cwd`; ports attach by pid, then by published host
+port), with a **fine granularity** (the deepest marker wins — `apps/web` and `apps/api` are separate
+cards, as are `compose -p staging` / `-p prod`). Anything that can't be attributed lands in an
+always-visible **Ungrouped / Standalone** card — nothing disappears. Each card rolls up health
+(process liveness + container status), CPU/RAM, and clickable port chips, and all actions
+(kill / stop / restart / open) work from the card. A **Cockpit | Tables** toggle (persisted) switches
+back to the flat forensic tables at any time.
 
 ### Processes
 - Auto-detection of **Node.js**, **Python**, **Rust** (cargo), **Go** (go run), **Deno**, **Bun**, **Java** (java/mvn/gradle), **PHP** (php/composer), **Ruby** (ruby/rails/bundle), and **C/C++** (gcc/make/cmake/gdb) processes
@@ -189,6 +202,7 @@ dev-watch/
 |----------|--------|-------------|
 | `/` | GET | Dashboard HTML |
 | `/icons/<file>` | GET | Local SVG tech icon |
+| `/api/projects` | GET | Cockpit: processes + containers + ports grouped by project |
 | `/api/ps` | GET | Dev processes + native binaries (excludes containers) |
 | `/api/docker` | GET | Docker containers (status, health, ports, compose project) |
 | `/api/ports` | GET | All listening TCP ports |

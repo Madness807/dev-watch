@@ -510,3 +510,40 @@
     display: none;
   }
   .error-banner.show { display: block; }
+
+  /* ── View toggle (Cockpit | Tables) ── */
+  .view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; }
+  .vbtn {
+    background: transparent; border: none; color: var(--text-dim);
+    font-family: var(--mono); font-size: 12px; padding: 5px 12px; cursor: pointer; transition: all .15s;
+  }
+  .vbtn:hover { color: var(--text); }
+  .vbtn.active { background: rgba(96,165,250,.12); color: var(--blue); }
+  body.mode-cockpit #flat-view { display: none; }
+  body.mode-tables  #cockpit-view { display: none; }
+
+  /* ── Cockpit project cards ── */
+  #cockpit-body { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .project-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .project-head {
+    display: flex; align-items: center; gap: 10px; padding: 11px 16px; cursor: pointer; user-select: none; flex-wrap: wrap;
+  }
+  .project-head:hover { background: rgba(255,255,255,.02); }
+  .project-head .chevron { font-size: 10px; color: var(--text-dim); transition: transform .2s; }
+  .project-card.collapsed .chevron { transform: rotate(-90deg); }
+  .project-card.collapsed .project-detail { display: none; }
+  .project-name { color: var(--cyan); font-weight: 700; font-size: 14px; }
+  .project-badges { font-size: 11px; color: var(--text-dim); }
+  .project-summary { font-size: 11px; color: var(--text-dim); }
+  .project-chips { margin-left: auto; display: flex; align-items: center; gap: 2px; flex-wrap: wrap; }
+  .project-detail { border-top: 1px solid var(--border); padding: 6px 16px 10px; }
+  .proj-row {
+    display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px;
+    border-bottom: 1px solid rgba(255,255,255,.03); flex-wrap: wrap;
+  }
+  .proj-row:last-child { border-bottom: none; }
+  .proj-row .cname { color: var(--cyan); font-weight: 500; }
+  .proj-row .cmd { color: var(--text-dim); font-size: 12px; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proj-row .spacer { margin-left: auto; }
+  .proj-section-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 8px 0 2px; }
+  .project-card.ungrouped { border-style: dashed; opacity: .92; }

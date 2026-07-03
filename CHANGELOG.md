@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-07-03
+
+### Added
+- **Project Cockpit** (new default view): groups processes + Docker containers + listening ports
+  into one card per project, instead of four disconnected tables. Correlation is by canonical
+  project directory — a process joins the container whose compose `working_dir` (new
+  `com.docker.compose.project.working_dir` label, folded into the existing `docker inspect`) contains
+  its resolved `cwd`; ports attach by pid then by published host port. Fine granularity (deepest
+  marker among `docker-compose.yml/.git/package.json/pyproject.toml/Cargo.toml/go.mod` wins, so
+  `apps/web`/`apps/api` and `-p staging`/`-p prod` stay separate). Unattributable items go to an
+  always-visible Ungrouped/Standalone card. New `GET /api/projects` endpoint; correlation lives in a
+  pure, hermetically-tested `build_projects()` in `helpers.py`. A persisted **Cockpit | Tables**
+  toggle keeps the flat tables one click away. No new attack surface — actions reuse the existing
+  allowlist-guarded endpoints.
+
+### Changed
+- Refactored `/api/ps`, `/api/docker`, `/api/ports` bodies into reusable `scan_*` functions shared
+  by the flat endpoints and `/api/projects`. `/api/ps` items now also carry `project_root`.
+
 ## [1.5.1] - 2026-07-03
 
 ### Changed
