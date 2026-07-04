@@ -271,3 +271,42 @@ def test_build_projects_wsl_workdir_bridges_by_name():
     res = build_projects(procs, conts, [], home)
     assert len(res) == 1
     assert len(res[0]["processes"]) == 1 and len(res[0]["containers"]) == 1
+
+
+# ── Audit v1.6.2: get_gpu_usage coverage (F10) ──
+
+def test_get_gpu_usage_parses_nvidia_smi(monkeypatch):
+    monkeypatch.setattr(helpers, "run_cmd", lambda cmd: "42, 2048, 8192\n")
+    assert helpers.get_gpu_usage() == {"pct": 42.0, "vram_used": 2048, "vram_total": 8192}
+
+
+def test_get_gpu_usage_first_gpu_only(monkeypatch):
+    monkeypatch.setattr(helpers, "run_cmd", lambda cmd: "10, 100, 200\n90, 300, 400\n")
+    assert helpers.get_gpu_usage()["pct"] == 10.0
+
+
+def test_get_gpu_usage_none_without_gpu(monkeypatch):
+    monkeypatch.setattr(helpers, "run_cmd", lambda cmd: "")
+    assert helpers.get_gpu_usage() is None
+
+
+def test_get_gpu_usage_none_on_garbage(monkeypatch):
+    monkeypatch.setattr(helpers, "run_cmd", lambda cmd: "not,parseable\n")
+    assert helpers.get_gpu_usage() is None
+
+
+# ── Audit v1.6.2: run_cmd_result surfaces returncode + stderr (F6) ──
+
+def test_run_cmd_result_success():
+    rc, out, err = helpers.run_cmd_result(["true"])
+    assert rc == 0 and err == ""
+
+
+def test_run_cmd_result_captures_stderr_and_rc():
+    rc, out, err = helpers.run_cmd_result(["sh", "-c", "echo oops >&2; exit 3"])
+    assert rc == 3 and "oops" in err
+
+
+def test_run_cmd_result_missing_binary():
+    rc, out, err = helpers.run_cmd_result(["definitely-not-a-real-binary-xyz"])
+    assert rc != 0 and err

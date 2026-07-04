@@ -18,13 +18,13 @@
     <path d="M9.9 9.9l-.6-.6M14.7 14.7l-.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
     <path d="M14.1 9.9l.6-.6M9.3 14.7l.6-.6" stroke="#38bdf8" stroke-width="0.5" stroke-linecap="round"/>
   </svg>
-  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.6.1</span></div>
+  <div class="titlebar-title">DEV WATCH <span style="font-size:9px;color:var(--muted);font-weight:400;">v1.6.2</span></div>
   <div class="live-badge"><div class="pulse-dot"></div> LIVE</div>
 </div>
 
 <div class="toolbar">
   <span class="label">Filter :</span>
-  <input class="filter" type="text" id="filter" placeholder="pid, project, port, type..." oninput="renderAll()">
+  <input class="filter" type="text" id="filter" aria-label="Filter processes, containers and ports" placeholder="pid, project, port, type..." oninput="renderAll()">
   <button class="btn" onclick="fetchData()">Refresh</button>
   <button class="btn active" id="watch-btn" onclick="cycleWatch()">Watch 10s</button>
   <span class="view-toggle">
@@ -41,8 +41,8 @@
   </div>
 </div>
 
-<div class="toast-container" id="toast-container"></div>
-<div class="error-banner" id="error-banner"></div>
+<div class="toast-container" id="toast-container" role="status" aria-live="polite"></div>
+<div class="error-banner" id="error-banner" role="alert" aria-live="assertive"></div>
 <div class="status-line" id="status-line"></div>
 
 <!-- Cockpit (grouped by project) -->
@@ -62,15 +62,15 @@
       Processes
     </span>
     <span style="display:flex;align-items:center;gap:6px;" onclick="event.stopPropagation()">
-      <button class="btn filter-type node active" data-type="node" onclick="toggleTypeFilter('node')" style="padding:2px 8px;font-size:11px;"><img src="/icons/nodejs.svg" style="width:12px;height:12px;vertical-align:-1px;"> Node</button>
-      <button class="btn filter-type python active" data-type="python" onclick="toggleTypeFilter('python')" style="padding:2px 8px;font-size:11px;"><img src="/icons/python.svg" style="width:12px;height:12px;vertical-align:-1px;"> Python</button>
-      <button class="btn filter-type rust active" data-type="rust" onclick="toggleTypeFilter('rust')" style="padding:2px 8px;font-size:11px;"><img src="/icons/rust.svg" style="width:12px;height:12px;vertical-align:-1px;"> Rust</button>
-      <button class="btn filter-type go active" data-type="go" onclick="toggleTypeFilter('go')" style="padding:2px 8px;font-size:11px;"><img src="/icons/go.svg" style="width:12px;height:12px;vertical-align:-1px;"> Go</button>
-      <button class="btn filter-type deno active" data-type="deno" onclick="toggleTypeFilter('deno')" style="padding:2px 8px;font-size:11px;"><img src="/icons/deno.svg" style="width:12px;height:12px;vertical-align:-1px;"> Deno</button>
-      <button class="btn filter-type bun active" data-type="bun" onclick="toggleTypeFilter('bun')" style="padding:2px 8px;font-size:11px;"><img src="/icons/bun.svg" style="width:12px;height:12px;vertical-align:-1px;"> Bun</button>
-      <button class="btn filter-type java active" data-type="java" onclick="toggleTypeFilter('java')" style="padding:2px 8px;font-size:11px;"><img src="/icons/java.svg" style="width:12px;height:12px;vertical-align:-1px;"> Java</button>
-      <button class="btn filter-type php active" data-type="php" onclick="toggleTypeFilter('php')" style="padding:2px 8px;font-size:11px;"><img src="/icons/php.svg" style="width:12px;height:12px;vertical-align:-1px;"> PHP</button>
-      <button class="btn filter-type ruby active" data-type="ruby" onclick="toggleTypeFilter('ruby')" style="padding:2px 8px;font-size:11px;"><img src="/icons/ruby.svg" style="width:12px;height:12px;vertical-align:-1px;"> Ruby</button>
+      <button class="btn filter-type node active" data-type="node" onclick="toggleTypeFilter('node')" style="padding:2px 8px;font-size:11px;"><img src="/icons/nodejs.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> Node</button>
+      <button class="btn filter-type python active" data-type="python" onclick="toggleTypeFilter('python')" style="padding:2px 8px;font-size:11px;"><img src="/icons/python.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> Python</button>
+      <button class="btn filter-type rust active" data-type="rust" onclick="toggleTypeFilter('rust')" style="padding:2px 8px;font-size:11px;"><img src="/icons/rust.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> Rust</button>
+      <button class="btn filter-type go active" data-type="go" onclick="toggleTypeFilter('go')" style="padding:2px 8px;font-size:11px;"><img src="/icons/go.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> Go</button>
+      <button class="btn filter-type deno active" data-type="deno" onclick="toggleTypeFilter('deno')" style="padding:2px 8px;font-size:11px;"><img src="/icons/deno.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> Deno</button>
+      <button class="btn filter-type bun active" data-type="bun" onclick="toggleTypeFilter('bun')" style="padding:2px 8px;font-size:11px;"><img src="/icons/bun.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> Bun</button>
+      <button class="btn filter-type java active" data-type="java" onclick="toggleTypeFilter('java')" style="padding:2px 8px;font-size:11px;"><img src="/icons/java.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> Java</button>
+      <button class="btn filter-type php active" data-type="php" onclick="toggleTypeFilter('php')" style="padding:2px 8px;font-size:11px;"><img src="/icons/php.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> PHP</button>
+      <button class="btn filter-type ruby active" data-type="ruby" onclick="toggleTypeFilter('ruby')" style="padding:2px 8px;font-size:11px;"><img src="/icons/ruby.svg" alt="" style="width:12px;height:12px;vertical-align:-1px;"> Ruby</button>
       <button class="btn filter-type c active" data-type="c" onclick="toggleTypeFilter('c')" style="padding:2px 8px;font-size:11px;">C/C++</button>
       <button class="btn filter-type native active" data-type="native" onclick="toggleTypeFilter('native')" style="padding:2px 8px;font-size:11px;">&#9881; Native</button>
       <span id="proc-count"></span>
@@ -194,11 +194,13 @@
     <h3>What is protected</h3>
     <ul>
       <li>Server bound to <strong>127.0.0.1</strong> only</li>
+      <li>Host-header allowlist: only loopback hostnames are served (blocks DNS-rebinding)</li>
       <li>Same-origin only (dashboard served by Flask; no CORS layer, so cross-origin pages cannot read the API)</li>
+      <li>Security headers: <code>X-Frame-Options: DENY</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy</code></li>
       <li>PID allowlist: only scanned processes can be killed</li>
       <li>Docker allowlist: only scanned containers can be stopped/restarted</li>
       <li>No shell=True in system commands</li>
-      <li>HTML escaping against XSS injections</li>
+      <li>HTML escaping of free-form values (process/container/path strings) against XSS</li>
       <li>Docker processes filtered (no healthcheck pollution)</li>
       <li>Zero external network calls (local icons, no CDN)</li>
     </ul>
@@ -220,7 +222,7 @@
       <li>Change the bind from 127.0.0.1 to 0.0.0.0</li>
       <li>Expose port 3999 via a reverse proxy</li>
       <li>Use this tool on a shared server</li>
-      <li>Add "null" to CORS origins</li>
+      <li>Loosen the Host-header allowlist to accept non-loopback hostnames</li>
     </ul>
 
     <div style="text-align:center;margin-top:18px;">

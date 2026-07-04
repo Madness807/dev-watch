@@ -340,7 +340,7 @@ function portTags(ports) {
   if (!ports || !ports.length) return '<span class="no-port">&mdash;</span>';
   return ports.map(p =>
     `<span class="port-tag port-open" data-port="${p}" title="Open http://localhost:${p}">:${p}</span>` +
-    `<button class="port-copy" data-port="${p}" title="Copy http://localhost:${p}">${COPY_ICON}</button>`
+    `<button class="port-copy" data-port="${p}" aria-label="Copy http://localhost:${p}" title="Copy http://localhost:${p}">${COPY_ICON}</button>`
   ).join('');
 }
 

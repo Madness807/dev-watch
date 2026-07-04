@@ -26,6 +26,22 @@ def run_cmd(cmd):
         return ""
 
 
+def run_cmd_result(cmd):
+    """Like run_cmd but returns (returncode, stdout, stderr) so the caller can
+    surface real errors instead of guessing failure from empty stdout. cmd is a
+    list; never uses shell=True and never raises for a command-level failure.
+    """
+    try:
+        p = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=CMD_TIMEOUT
+        )
+        return p.returncode, p.stdout, p.stderr
+    except FileNotFoundError:
+        return 127, "", f"command not found: {cmd[0] if cmd else ''}"
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {CMD_TIMEOUT}s"
+
+
 def spawn_detached(cmd):
     """Launch cmd (a list) fire-and-forget, detached from the server process.
 

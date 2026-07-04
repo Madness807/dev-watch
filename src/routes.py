@@ -8,7 +8,7 @@ import time
 from flask import jsonify, request
 from src.config import PORT, OPEN_CMD
 from src.helpers import (
-    run_cmd, is_in_container, docker_available, get_cwd, get_cmdline, get_venv,
+    run_cmd, run_cmd_result, is_in_container, docker_available, get_cwd, get_cmdline, get_venv,
     get_project_name, get_listening_ports, ports_by_pid, first_pid_and_name,
     classify_process, is_native_binary, get_cpu_usage, get_ram_usage,
     get_disk_usage, get_gpu_usage, get_proc_ticks, proc_cpu_percents,
@@ -26,8 +26,10 @@ _cpu_state = {"prev": None}
 # Per-process CPU state: previous tick snapshot + timestamp for delta computation
 _proc_cpu_state = {"ticks": {}, "time": None}
 
-# Docker container IDs are hex; also allow compose-style names.
-_DOCKER_ID_RE = re.compile(r'[a-zA-Z0-9_.-]+')
+# Docker container IDs are hex; also allow compose-style names. Anchored to an
+# alphanumeric first char so a value like "-foo" can never be argument-injected
+# into the docker CLI (real short-ids / compose names never start with -/./_).
+_DOCKER_ID_RE = re.compile(r'[a-zA-Z0-9][a-zA-Z0-9_.-]*')
 
 
 # ── Scanners (return plain lists; reused by the flat endpoints AND /api/projects) ──
@@ -258,10 +260,13 @@ def register_routes(app):
             return jsonify({"error": "Invalid container ID"}), 400
         if container_id not in known_container_ids:
             return jsonify({"error": "Container not recognized"}), 403
-        result = run_cmd(["docker", action, container_id])
-        if result.strip():
+        # Use the real exit code (not "did it print anything") and surface stderr
+        # so a failed docker action is diagnosable instead of an opaque 500.
+        rc, out, err = run_cmd_result(["docker", action, container_id])
+        if rc == 0:
             return jsonify({"ok": True, "id": container_id})
-        return jsonify({"error": f"Failed: docker {action}"}), 500
+        detail = (err or out or "").strip()
+        return jsonify({"error": f"docker {action} failed", "detail": detail}), 500
 
     @app.route("/api/docker/stop", methods=["POST"])
     def api_docker_stop():

@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2026-07-04
+
+Security & robustness pass from a full multi-dimension audit (findings verified adversarially).
+
+### Security
+- **DNS-rebinding protection (critical):** a `before_request` guard now rejects (403) any request
+  whose `Host` header is not a loopback name (`127.0.0.1`/`localhost`/`::1`). Previously a malicious
+  web page could rebind its domain to `127.0.0.1`, become same-origin, enumerate valid pids/container
+  ids/dirs via `GET /api/ps` + `/api/docker`, and POST to the destructive endpoints — the scan
+  allowlists were the only backstop.
+- **Security headers:** every response now carries `X-Frame-Options: DENY` (anti-clickjacking),
+  `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer` (`after_request`).
+- **Docker id regex anchored** to `[a-zA-Z0-9][a-zA-Z0-9_.-]*` so a value like `-foo` can never be
+  argument-injected into the docker CLI (defense-in-depth; the allowlist already blocked it).
+
+### Changed
+- `POST /api/docker/stop|restart` now uses the docker exit code (not "did it print anything") and
+  surfaces stderr in the error payload, so a failed action is diagnosable instead of an opaque 500.
+  New helper `run_cmd_result()` returns `(returncode, stdout, stderr)`.
+
+### Accessibility
+- Filter input labelled; toast/error regions made `aria-live` (`status`/`alert`); decorative filter
+  icons marked `alt=""`; copy-URL buttons given `aria-label`.
+
+### Tests
+- +19 tests: security headers, Host-header validation, docker id regex, docker stderr surfacing,
+  `/api/docker/restart` happy/no-body/invalid-id, `get_gpu_usage`, `run_cmd_result`, and the first
+  hermetic `scan_containers` parsing test (which feeds the destructive `known_container_ids`).
+
+### Docs
+- README/disclaimer reconciled (version, security lists); the "XSS protection on all dynamic data"
+  claim softened to the accurate scope; vestigial CORS disclaimer removed; `flask`/`pytest` pinned;
+  `start.sh` hardened with `set -euo pipefail`.
+
 ## [1.6.1] - 2026-07-04
 
 ### Fixed

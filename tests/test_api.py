@@ -271,7 +271,7 @@ def test_kill_rejects_bool_pid(client):
 
 def test_docker_stop_success(client, monkeypatch):
     routes.known_container_ids.add("abc123def456")
-    monkeypatch.setattr(routes, "run_cmd", lambda cmd: "abc123def456\n")
+    monkeypatch.setattr(routes, "run_cmd_result", lambda cmd: (0, "abc123def456\n", ""))
     res = client.post("/api/docker/stop", json={"id": "abc123def456"})
     assert res.status_code == 200
     assert res.get_json()["ok"]
@@ -279,7 +279,7 @@ def test_docker_stop_success(client, monkeypatch):
 
 def test_docker_stop_failure_returns_500(client, monkeypatch):
     routes.known_container_ids.add("abc123def456")
-    monkeypatch.setattr(routes, "run_cmd", lambda cmd: "")  # docker printed nothing
+    monkeypatch.setattr(routes, "run_cmd_result", lambda cmd: (1, "", "daemon error"))
     res = client.post("/api/docker/stop", json={"id": "abc123def456"})
     assert res.status_code == 500
 
@@ -422,3 +422,113 @@ def test_projects_endpoint_empty(client, monkeypatch):
     res = client.get("/api/projects")
     assert res.status_code == 200
     assert res.get_json() == []
+
+
+# ── Audit v1.6.2: security headers (F5) ──
+
+def test_security_headers_present_on_dashboard(client):
+    res = client.get("/")
+    assert res.headers.get("X-Content-Type-Options") == "nosniff"
+    assert res.headers.get("X-Frame-Options") == "DENY"
+    assert res.headers.get("Referrer-Policy") == "no-referrer"
+
+
+def test_security_headers_present_on_api(client):
+    res = client.get("/api/health")
+    assert res.headers.get("X-Content-Type-Options") == "nosniff"
+    assert res.headers.get("X-Frame-Options") == "DENY"
+
+
+# ── Audit v1.6.2: Host-header validation / DNS-rebinding guard (F1) ──
+
+def test_rejects_foreign_host_header(client):
+    # A DNS-rebinding attacker's page sends its own domain as Host.
+    res = client.get("/api/ps", headers={"Host": "evil.example"})
+    assert res.status_code == 403
+
+
+def test_rejects_foreign_host_on_destructive_post(client):
+    routes.known_pids.add(4242)
+    res = client.post("/api/kill", json={"pid": 4242}, headers={"Host": "attacker.test"})
+    assert res.status_code == 403
+
+
+def test_accepts_loopback_host(client):
+    for host in ("localhost", "127.0.0.1", "localhost:3999", "127.0.0.1:3999"):
+        res = client.get("/api/health", headers={"Host": host})
+        assert res.status_code == 200, host
+
+
+# ── Audit v1.6.2: docker id regex anchored (F11) ──
+
+def test_docker_stop_rejects_leading_dash_id(client):
+    # A leading '-' could be argument-injected into the docker CLI.
+    res = client.post("/api/docker/stop", json={"id": "-foo"})
+    assert res.status_code == 400
+
+
+def test_docker_stop_rejects_leading_dot_id(client):
+    res = client.post("/api/docker/stop", json={"id": ".foo"})
+    assert res.status_code == 400
+
+
+# ── Audit v1.6.2: docker action surfaces stderr, uses returncode (F6) ──
+
+def test_docker_stop_surfaces_stderr(client, monkeypatch):
+    routes.known_container_ids.add("abc123def456")
+    monkeypatch.setattr(routes, "run_cmd_result",
+                        lambda cmd: (1, "", "Error: No such container: abc123def456"))
+    res = client.post("/api/docker/stop", json={"id": "abc123def456"})
+    assert res.status_code == 500
+    assert "No such container" in res.get_json().get("detail", "")
+
+
+# ── Audit v1.6.2: docker restart coverage (F10) ──
+
+def test_docker_restart_success(client, monkeypatch):
+    routes.known_container_ids.add("abc123def456")
+    monkeypatch.setattr(routes, "run_cmd_result", lambda cmd: (0, "abc123def456\n", ""))
+    res = client.post("/api/docker/restart", json={"id": "abc123def456"})
+    assert res.status_code == 200
+    assert res.get_json()["ok"]
+
+
+def test_docker_restart_rejects_no_body(client):
+    res = client.post("/api/docker/restart", content_type="application/json", data="{}")
+    assert res.status_code == 400
+
+
+def test_docker_restart_rejects_invalid_id(client):
+    res = client.post("/api/docker/restart", json={"id": "../../etc"})
+    assert res.status_code == 400
+
+
+# ── Audit v1.6.2: scan_containers hermetic parsing feeds allowlist (F4) ──
+
+def test_scan_containers_hermetic_populates_allowlist(client, monkeypatch):
+    ps_json = ('{"ID":"abc123def456","Names":"web","Image":"nginx:latest",'
+               '"Status":"Up 2 hours (healthy)","Ports":"0.0.0.0:8080->80/tcp, 5432/tcp"}')
+
+    def fake(cmd):
+        if cmd[:3] == ["docker", "ps", "--format"]:
+            return ps_json + "\n"
+        if cmd[:3] == ["docker", "ps", "-q"]:
+            return "abc123def456\n"
+        if cmd[:2] == ["docker", "inspect"]:
+            return "abc123def456|||myproj|||healthy|||/nonexistent|||web\n"
+        return ""
+
+    monkeypatch.setattr(routes, "docker_available", lambda: True)
+    monkeypatch.setattr(routes, "run_cmd", fake)
+    res = client.get("/api/docker")
+    assert res.status_code == 200
+    data = res.get_json()
+    assert len(data) == 1
+    c = data[0]
+    assert c["id"] == "abc123def456"
+    assert c["name"] == "web" and c["image"] == "nginx:latest"
+    assert c["project"] == "myproj" and c["health"] == "healthy"
+    assert c["ports"] == [{"host": 8080, "container": 80}]
+    assert 80 not in c["internal_ports"] and 5432 in c["internal_ports"]
+    # The destructive allowlist is populated as a side effect.
+    assert "abc123def456" in routes.known_container_ids

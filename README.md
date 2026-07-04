@@ -5,7 +5,7 @@
 <h1 align="center">DEV WATCH</h1>
 
 <p align="center">
-  <strong>v1.6.0</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
+  <strong>v1.6.2</strong> — Local web dashboard to monitor and manage processes, Docker containers, network ports and connections on your dev machine.
 </p>
 
 <!-- Screenshot will be added in a future update -->
@@ -152,11 +152,13 @@ A **Disclaimer** button is accessible in the dashboard toolbar. It summarizes al
 > [!TIP]
 > **Active protections**
 > - **Bind 127.0.0.1**: invisible from the network
+> - **Host-header allowlist**: only loopback hostnames (`127.0.0.1`, `localhost`, `::1`) are served; any other `Host` gets a 403, which blocks DNS-rebinding attacks from a malicious web page
 > - **Same-origin only**: the dashboard is served by Flask itself, so no CORS layer is enabled — cross-origin pages get no `Access-Control-Allow-Origin` header and cannot read the API
+> - **Security headers**: `X-Frame-Options: DENY` (anti-clickjacking), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
 > - **PID allowlist**: only scanned processes can be killed (403 otherwise)
-> - **Container allowlist**: only scanned containers can be acted upon (403 otherwise)
+> - **Container allowlist**: only scanned containers can be acted upon (403 otherwise); the id is regex-validated (no leading `-`/`.`) before reaching the docker CLI
 > - **No shell=True**: all commands via subprocess with argument lists
-> - **HTML escaping**: XSS protection on all dynamic data
+> - **HTML escaping**: free-form values (process command lines, project/container names, paths) are HTML-escaped before rendering; the remaining interpolations are numeric ports and a fixed enum of types
 > - **Docker filtering**: processes running inside containers are excluded from the Processes section
 > - **Dashboard served by Flask**: no file://, same origin
 > - **Virtual environment**: dependencies isolated from system Python
